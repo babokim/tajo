@@ -364,6 +364,12 @@ public class EvalTreeUtil {
     return (Collection<T>) finder.evalNodes;
   }
 
+  public static <T extends EvalNode> Collection<T> findOuterJoinRelatedEvals(EvalNode evalNode) {
+    EvalOuterJoinRelatedFinder finder = new EvalOuterJoinRelatedFinder();
+    finder.visitChild(null, evalNode, new Stack<EvalNode>());
+    return (Collection<T>) finder.evalNodes;
+  }
+
   public static class EvalFinder extends BasicEvalNodeVisitor<Object, Object> {
     private EvalType targetType;
     List<EvalNode> evalNodes = TUtil.newList();
@@ -380,6 +386,30 @@ public class EvalTreeUtil {
         evalNodes.add(evalNode);
       }
 
+      return evalNode;
+    }
+  }
+
+  public static class EvalOuterJoinRelatedFinder extends BasicEvalNodeVisitor<Object, Object> {
+    List<EvalNode> evalNodes = TUtil.newList();
+
+    public EvalOuterJoinRelatedFinder() {
+    }
+
+    @Override
+    public Object visitChild(Object context, EvalNode evalNode, Stack<EvalNode> stack) {
+      super.visitChild(context, evalNode, stack);
+
+      if (evalNode.type == EvalType.CASE) {
+        evalNodes.add(evalNode);
+      } else if (evalNode.type == EvalType.FUNCTION) {
+        FunctionEval functionEval = (FunctionEval)evalNode;
+        if ("coalesce".equals(functionEval.getName())) {
+          evalNodes.add(evalNode);
+        }
+      } else if (evalNode.type == EvalType.IS_NULL) {
+        evalNodes.add(evalNode);
+      }
       return evalNode;
     }
   }

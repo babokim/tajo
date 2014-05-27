@@ -369,4 +369,18 @@ public class TestJoinQuery extends QueryTestCaseBase {
     executeString("DROP TABLE JOINS.supplier_ PURGE");
     executeString("DROP DATABASE JOINS");
   }
+
+  @Test
+  public final void testLeftOuterJoinWithNull1() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testLeftOuterJoinWithNull2() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
 }

@@ -327,15 +327,14 @@ public class TajoConf extends Configuration {
     CLI_PRINT_NULL("tajo.cli.print.null", false),
     CLI_PRINT_NULL_WORD("tajo.cli.print.null.word", "null"),
 
-    //PLANNER
-    PLANNER_USE_FILTER_PUSHDOWN("tajo.planner.use.filter.pushdown", true),
-
     //TIME & DATE
     TAJO_TIMEZONE("tajo.timezone", System.getProperty("user.timezone")),
     TAJO_DATE_ORDER("tajo.date.order", "YMD"),
 
     // FILE FORMAT
-    CSVFILE_NULL("csvfile.null", "\\\\N")
+    CSVFILE_NULL("csvfile.null", "\\\\N"),
+    //PLANNER
+    PLANNER_USE_FILTER_PUSHDOWN("tajo.planner.use.filter.pushdown", true)
     ;
 
     public final String varname;
