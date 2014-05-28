@@ -368,6 +368,7 @@ public class TestJoinQuery extends QueryTestCaseBase {
     executeString("DROP TABLE JOINS.part_ PURGE");
     executeString("DROP TABLE JOINS.supplier_ PURGE");
     executeString("DROP DATABASE JOINS");
+<<<<<<< HEAD
   }
 
   @Test
@@ -382,5 +383,7 @@ public class TestJoinQuery extends QueryTestCaseBase {
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
+=======
+>>>>>>> 27b905808a73affae73303901cd7c0ba885327bd
   }
 }
