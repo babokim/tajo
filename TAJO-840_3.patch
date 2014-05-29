@@ -1,0 +1,572 @@
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbyHashAggregationExec.java tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbyHashAggregationExec.java
+index 8daad0b..1a4b706 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbyHashAggregationExec.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbyHashAggregationExec.java
+@@ -21,6 +21,7 @@ package org.apache.tajo.engine.planner.physical;
+ import org.apache.tajo.catalog.Column;
+ import org.apache.tajo.catalog.Schema;
+ import org.apache.tajo.catalog.statistics.TableStats;
++import org.apache.tajo.datum.DatumFactory;
+ import org.apache.tajo.datum.NullDatum;
+ import org.apache.tajo.engine.eval.AggregationFunctionCallEval;
+ import org.apache.tajo.engine.function.FunctionContext;
+@@ -156,7 +157,18 @@ public class DistinctGroupbyHashAggregationExec extends PhysicalExec {
+     if (nullCount == hashAggregators.length) {
+       finished = true;
+       progress = 1.0f;
+-      return null;
++
++      // If DistinctGroupbyHashAggregationExec didn't has any rows,
++      // it should return NullDatum.
++      if (totalNumRows == 0 && groupbyNodeNum == 0) {
++        Tuple tuple = new VTuple(hashAggregators.length);
++        for (int i = 0; i < tuple.size(); i++) {
++          tuple.put(i, DatumFactory.createNullDatum());
++        }
++        return tuple;
++      } else {
++        return null;
++      }
+     }
+ 
+ 
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbySortAggregationExec.java tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbySortAggregationExec.java
+index fd79725..5f616b5 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbySortAggregationExec.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/DistinctGroupbySortAggregationExec.java
+@@ -19,6 +19,9 @@
+ package org.apache.tajo.engine.planner.physical;
+ 
+ import org.apache.tajo.catalog.statistics.TableStats;
++import org.apache.tajo.common.TajoDataTypes;
++import org.apache.tajo.datum.DatumFactory;
++import org.apache.tajo.datum.NullDatum;
+ import org.apache.tajo.engine.planner.logical.DistinctGroupbyNode;
+ import org.apache.tajo.engine.planner.logical.GroupbyNode;
+ import org.apache.tajo.storage.Tuple;
+@@ -79,6 +82,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
+     }
+ 
+     boolean allNull = true;
++
+     for (int i = 0; i < groupbyNodeNum; i++) {
+       if (first && i > 0) {
+         // All SortAggregateExec uses same SeqScanExec object.
+@@ -91,6 +95,37 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
+         allNull = false;
+       }
+     }
++
++    // If DistinctGroupbySortAggregationExec received NullDatum and didn't has any grouping keys,
++    // it should return primitive values for NullDatum.
++    if (allNull && groupbyNodeNum == 1 && aggregateExecs.length == 1 && first)   {
++      if (aggregateExecs[0].groupingKeyNum == 0) {
++        Tuple tuple = new VTuple(aggregateExecs[0].aggFunctionsNum);
++        NullDatum nullDatum = DatumFactory.createNullDatum();
++
++        for (int i = 0; i < outColumnNum; i++) {
++          TajoDataTypes.Type type = outSchema.getColumn(i).getDataType().getType();
++          if (type == TajoDataTypes.Type.INT8) {
++            tuple.put(i, DatumFactory.createInt8(nullDatum.asInt8()));
++          } else if (type == TajoDataTypes.Type.INT4) {
++            tuple.put(i, DatumFactory.createInt4(nullDatum.asInt4()));
++          } else if (type == TajoDataTypes.Type.INT2) {
++            tuple.put(i, DatumFactory.createInt2(nullDatum.asInt2()));
++          } else if (type == TajoDataTypes.Type.FLOAT4) {
++            tuple.put(i, DatumFactory.createFloat4(nullDatum.asFloat4()));
++          } else if (type == TajoDataTypes.Type.FLOAT8) {
++            tuple.put(i, DatumFactory.createFloat8(nullDatum.asFloat8()));
++          } else {
++            tuple.put(i, DatumFactory.createNullDatum());
++          }
++        }
++
++        finished = true;
++        first = false;
++        return tuple;
++      }
++    }
++
+     first = false;
+ 
+     if (allNull) {
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/HashAggregateExec.java tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/HashAggregateExec.java
+index c87e01a..97698e4 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/HashAggregateExec.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/HashAggregateExec.java
+@@ -18,6 +18,9 @@
+ 
+ package org.apache.tajo.engine.planner.physical;
+ 
++import org.apache.tajo.common.TajoDataTypes;
++import org.apache.tajo.datum.DatumFactory;
++import org.apache.tajo.datum.NullDatum;
+ import org.apache.tajo.engine.function.FunctionContext;
+ import org.apache.tajo.engine.planner.logical.GroupbyNode;
+ import org.apache.tajo.storage.Tuple;
+@@ -37,6 +40,7 @@ public class HashAggregateExec extends AggregationExec {
+   private Tuple tuple = null;
+   private Map<Tuple, FunctionContext[]> hashTable;
+   private boolean computed = false;
++  private boolean finished = false;
+   private Iterator<Entry<Tuple, FunctionContext []>> iterator = null;
+ 
+   public HashAggregateExec(TaskAttemptContext ctx, GroupbyNode plan, PhysicalExec subOp) throws IOException {
+@@ -73,6 +77,10 @@ public class HashAggregateExec extends AggregationExec {
+ 
+   @Override
+   public Tuple next() throws IOException {
++    if (finished) {
++      return null;
++    }
++
+     if(!computed) {
+       compute();
+       iterator = hashTable.entrySet().iterator();
+@@ -96,12 +104,37 @@ public class HashAggregateExec extends AggregationExec {
+ 
+       return tuple;
+     } else {
+-      return null;
++      // If HashAggregateExec received NullDatum and didn't has any grouping keys,
++      // it should return primitive values for NullLDatum.
++      if (groupingKeyNum == 0 && aggFunctionsNum > 0 && hashTable.entrySet().size() == 0) {
++        NullDatum nullDatum = DatumFactory.createNullDatum();
++        for (int i = 0; i < outColumnNum; i++) {
++          TajoDataTypes.Type type = outSchema.getColumn(i).getDataType().getType();
++          if (type == TajoDataTypes.Type.INT8) {
++            tuple.put(i, DatumFactory.createInt8(nullDatum.asInt8()));
++          } else if (type == TajoDataTypes.Type.INT4) {
++            tuple.put(i, DatumFactory.createInt4(nullDatum.asInt4()));
++          } else if (type == TajoDataTypes.Type.INT2) {
++            tuple.put(i, DatumFactory.createInt2(nullDatum.asInt2()));
++          } else if (type == TajoDataTypes.Type.FLOAT4) {
++            tuple.put(i, DatumFactory.createFloat4(nullDatum.asFloat4()));
++          } else if (type == TajoDataTypes.Type.FLOAT8) {
++            tuple.put(i, DatumFactory.createFloat8(nullDatum.asFloat8()));
++          } else {
++            tuple.put(i, DatumFactory.createNullDatum());
++          }
++        }
++
++        finished = true;
++        return tuple;
++      } else {
++        return null;
++      }
+     }
+   }
+ 
+   @Override
+-  public void rescan() throws IOException {    
++  public void rescan() throws IOException {
+     iterator = hashTable.entrySet().iterator();
+   }
+ 
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/SortAggregateExec.java tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/SortAggregateExec.java
+index 9a415d1..1b3cf45 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/SortAggregateExec.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/SortAggregateExec.java
+@@ -18,6 +18,9 @@
+ 
+ package org.apache.tajo.engine.planner.physical;
+ 
++import org.apache.tajo.common.TajoDataTypes;
++import org.apache.tajo.datum.DatumFactory;
++import org.apache.tajo.datum.NullDatum;
+ import org.apache.tajo.engine.function.FunctionContext;
+ import org.apache.tajo.engine.planner.logical.GroupbyNode;
+ import org.apache.tajo.storage.Tuple;
+@@ -47,6 +50,7 @@ public class SortAggregateExec extends AggregationExec {
+ 
+   public SortAggregateExec(TaskAttemptContext context, GroupbyNode plan, PhysicalExec child) throws IOException {
+     super(context, plan, child);
++
+     contexts = new FunctionContext[plan.getAggFunctions() == null ? 0 : plan.getAggFunctions().length];
+   }
+ 
+@@ -55,6 +59,7 @@ public class SortAggregateExec extends AggregationExec {
+     Tuple currentKey;
+     Tuple tuple = null;
+     Tuple outputTuple = null;
++    int nullCount = 0;
+ 
+     while(!context.isStopped() && (tuple = child.next()) != null) {
+       // get a key tuple
+@@ -69,6 +74,12 @@ public class SortAggregateExec extends AggregationExec {
+           for(int i = 0; i < aggFunctionsNum; i++) {
+             contexts[i] = aggFunctions[i].newContext();
+             aggFunctions[i].merge(contexts[i], inSchema, tuple);
++
++            // Find NullDatum in a tuple
++            if (groupingKeyNum == 0 && aggFunctionsNum == tuple.size()
++                && tuple.get(i) == NullDatum.get()) {
++              nullCount++;
++            }
+           }
+           lastKey = currentKey;
+         } else {
+@@ -115,6 +126,30 @@ public class SortAggregateExec extends AggregationExec {
+       }
+       finished = true;
+     }
++
++    // If SortAggregateExec received NullDatum and didn't has any grouping keys,
++    // it should return primitive values for NullDatum.
++    if (finished && groupingKeyNum == 0 && aggFunctionsNum > 0 && nullCount == aggFunctionsNum) {
++      NullDatum nullDatum = DatumFactory.createNullDatum();
++
++      for (int i = 0; i < outColumnNum; i++) {
++        TajoDataTypes.Type type = outSchema.getColumn(i).getDataType().getType();
++        if (type == TajoDataTypes.Type.INT8) {
++          outputTuple.put(i, DatumFactory.createInt8(nullDatum.asInt8()));
++        } else if (type == TajoDataTypes.Type.INT4) {
++          outputTuple.put(i, DatumFactory.createInt4(nullDatum.asInt4()));
++        } else if (type == TajoDataTypes.Type.INT2) {
++          outputTuple.put(i, DatumFactory.createInt2(nullDatum.asInt2()));
++        } else if (type == TajoDataTypes.Type.FLOAT4) {
++          outputTuple.put(i, DatumFactory.createFloat4(nullDatum.asFloat4()));
++        } else if (type == TajoDataTypes.Type.FLOAT8) {
++          outputTuple.put(i, DatumFactory.createFloat8(nullDatum.asFloat8()));
++        } else {
++          outputTuple.put(i, DatumFactory.createNullDatum());
++        }
++      }
++    }
++
+     return outputTuple;
+   }
+ 
+diff --git tajo-core/src/main/java/org/apache/tajo/master/querymaster/Repartitioner.java tajo-core/src/main/java/org/apache/tajo/master/querymaster/Repartitioner.java
+index 3a2e79f..292ae13 100644
+--- tajo-core/src/main/java/org/apache/tajo/master/querymaster/Repartitioner.java
++++ tajo-core/src/main/java/org/apache/tajo/master/querymaster/Repartitioner.java
+@@ -454,12 +454,6 @@ public class Repartitioner {
+                                                  SubQuery subQuery, DataChannel channel,
+                                                  int maxNum) {
+     ExecutionBlock execBlock = subQuery.getBlock();
+-    TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
+-
+-    if (totalStat.getNumRows() == 0) {
+-      return;
+-    }
+-
+     ScanNode scan = execBlock.getScanNodes()[0];
+     Path tablePath;
+     tablePath = subQuery.getContext().getStorageManager().getTablePath(scan.getTableName());
+@@ -500,9 +494,15 @@ public class Repartitioner {
+     // get a proper number of tasks
+     int determinedTaskNum = Math.min(maxNum, finalFetches.size());
+     LOG.info(subQuery.getId() + ", ScheduleHashShuffledFetches - Max num=" + maxNum + ", finalFetchURI=" + finalFetches.size());
++
+     if (groupby != null && groupby.getGroupingColumns().length == 0) {
+       determinedTaskNum = 1;
+       LOG.info(subQuery.getId() + ", No Grouping Column - determinedTaskNum is set to 1");
++    } else {
++      TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
++      if (totalStat.getNumRows() == 0) {
++        determinedTaskNum = 1;
++      }
+     }
+ 
+     // set the proper number of tasks to the estimated task num
+diff --git tajo-core/src/main/java/org/apache/tajo/worker/Task.java tajo-core/src/main/java/org/apache/tajo/worker/Task.java
+index bed6a93..8ddbf7e 100644
+--- tajo-core/src/main/java/org/apache/tajo/worker/Task.java
++++ tajo-core/src/main/java/org/apache/tajo/worker/Task.java
+@@ -375,17 +375,15 @@ public class Task {
+         context.setProgress(FETCHER_PROGRESS);
+       }
+ 
+-      if (context.getFragmentSize() > 0) {
+-        this.executor = taskRunnerContext.getTQueryEngine().
+-            createPlan(context, plan);
+-        this.executor.init();
++      this.executor = taskRunnerContext.getTQueryEngine().
++          createPlan(context, plan);
++      this.executor.init();
+ 
+-        while(!killed && executor.next() != null) {
+-        }
+-        this.executor.close();
+-        reloadInputStats();
+-        this.executor = null;
++      while(!killed && executor.next() != null) {
+       }
++      this.executor.close();
++      reloadInputStats();
++      this.executor = null;
+     } catch (Exception e) {
+       error = e ;
+       LOG.error(e.getMessage(), e);
+diff --git tajo-core/src/test/java/org/apache/tajo/engine/query/TestGroupByQuery.java tajo-core/src/test/java/org/apache/tajo/engine/query/TestGroupByQuery.java
+index 1263bbe..6c054dc 100644
+--- tajo-core/src/test/java/org/apache/tajo/engine/query/TestGroupByQuery.java
++++ tajo-core/src/test/java/org/apache/tajo/engine/query/TestGroupByQuery.java
+@@ -29,7 +29,7 @@ import java.sql.ResultSet;
+ @Category(IntegrationTest.class)
+ public class TestGroupByQuery extends QueryTestCaseBase {
+ 
+-  public TestGroupByQuery() {
++  public TestGroupByQuery() throws Exception {
+     super(TajoConstants.DEFAULT_DATABASE_NAME);
+   }
+ 
+@@ -304,4 +304,89 @@ public class TestGroupByQuery extends QueryTestCaseBase {
+     assertResultSet(res);
+     cleanupQuery(res);
+   }
++
++  @Test
++  public final void testGroupByWithNullData1() throws Exception {
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++  @Test
++  public final void testGroupByWithNullData2() throws Exception {
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++  @Test
++  public final void testGroupByWithNullData3() throws Exception {
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++  @Test
++  public final void testGroupByWithNullData4() throws Exception {
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++  @Test
++  public final void testGroupByWithNullData5() throws Exception {
++    executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
++    assertTableExists("table1");
++
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++
++    executeString("DROP TABLE table1");
++  }
++
++  @Test
++  public final void testGroupByWithNullData6() throws Exception {
++    executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
++    assertTableExists("table1");
++
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++
++    executeString("DROP TABLE table1");
++  }
++
++  @Test
++  public final void testGroupByWithNullData7() throws Exception {
++    executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
++    assertTableExists("table1");
++
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++
++    executeString("DROP TABLE table1");
++  }
++
++  @Test
++  public final void testGroupByWithNullData8() throws Exception {
++    executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
++    assertTableExists("table1");
++
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++
++    executeString("DROP TABLE table1");
++  }
++
++  @Test
++  public final void testGroupByWithNullData9() throws Exception {
++    ResultSet res = executeQuery();
++    assertResultSet(res);
++    cleanupQuery(res);
++
++    executeString("DROP TABLE table1");
++  }
+ }
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData1.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData1.sql
+new file mode 100644
+index 0000000..af089df
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData1.sql
+@@ -0,0 +1 @@
++select count(1) as unique_key from lineitem where l_orderkey = 1000;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData2.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData2.sql
+new file mode 100644
+index 0000000..84351af
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData2.sql
+@@ -0,0 +1 @@
++select count(1) as unique_key, max(l_orderkey) as max_key from lineitem where l_orderkey = 1000;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData3.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData3.sql
+new file mode 100644
+index 0000000..c6c23c6
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData3.sql
+@@ -0,0 +1,3 @@
++select max(l_orderkey) as maximum, count(l_linenumber) as unique_key
++from lineitem
++where l_orderkey = 1000
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData4.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData4.sql
+new file mode 100644
+index 0000000..ee345f9
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData4.sql
+@@ -0,0 +1,3 @@
++select max(l_orderkey) as maximum, count(distinct l_linenumber) as unique_key
++from lineitem
++where l_orderkey = 1000
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData5.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData5.sql
+new file mode 100644
+index 0000000..2247784
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData5.sql
+@@ -0,0 +1 @@
++select count(1) as unique_key from table1;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData6.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData6.sql
+new file mode 100644
+index 0000000..aea9c1c
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData6.sql
+@@ -0,0 +1 @@
++select count(distinct age) as unique_key, max(point) as maximum from table1;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData7.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData7.sql
+new file mode 100644
+index 0000000..bab8e23
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData7.sql
+@@ -0,0 +1 @@
++select max(point) as maximum, count(distinct age) as unique_key from table1 where age > 100;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData8.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData8.sql
+new file mode 100644
+index 0000000..0bd8b53
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData8.sql
+@@ -0,0 +1 @@
++select max(point) as maximum, count(age) as unique_key from table1;
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData9.sql tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData9.sql
+new file mode 100644
+index 0000000..56fb65c
+--- /dev/null
++++ tajo-core/src/test/resources/queries/TestGroupByQuery/testGroupByWithNullData9.sql
+@@ -0,0 +1,4 @@
++select l_orderkey, count(distinct l_linenumber) as unique_key
++from lineitem
++where l_orderkey = 1000
++group by l_orderkey
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData1.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData1.result
+new file mode 100644
+index 0000000..13335cb
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData1.result
+@@ -0,0 +1,3 @@
++unique_key
++-------------------------------
++0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData2.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData2.result
+new file mode 100644
+index 0000000..f4f9a5b
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData2.result
+@@ -0,0 +1,3 @@
++unique_key,max_key
++-------------------------------
++0,0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData3.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData3.result
+new file mode 100644
+index 0000000..fef3d0c
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData3.result
+@@ -0,0 +1,3 @@
++maximum,unique_key
++-------------------------------
++0,0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData4.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData4.result
+new file mode 100644
+index 0000000..fef3d0c
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData4.result
+@@ -0,0 +1,3 @@
++maximum,unique_key
++-------------------------------
++0,0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData5.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData5.result
+new file mode 100644
+index 0000000..13335cb
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData5.result
+@@ -0,0 +1,3 @@
++unique_key
++-------------------------------
++0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData6.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData6.result
+new file mode 100644
+index 0000000..58aaa20
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData6.result
+@@ -0,0 +1,3 @@
++unique_key,maximum
++-------------------------------
++0,0.0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData7.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData7.result
+new file mode 100644
+index 0000000..e19a623
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData7.result
+@@ -0,0 +1,3 @@
++maximum,unique_key
++-------------------------------
++0.0,0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData8.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData8.result
+new file mode 100644
+index 0000000..e19a623
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData8.result
+@@ -0,0 +1,3 @@
++maximum,unique_key
++-------------------------------
++0.0,0
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData9.result tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData9.result
+new file mode 100644
+index 0000000..1f6d988
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestGroupByQuery/testGroupByWithNullData9.result
+@@ -0,0 +1,2 @@
++l_orderkey,unique_key
++-------------------------------
+\ No newline at end of file

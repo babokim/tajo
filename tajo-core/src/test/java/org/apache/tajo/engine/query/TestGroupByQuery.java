@@ -380,4 +380,13 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
     executeString("DROP TABLE table1");
   }
+
+  @Test
+ public final void testGroupByWithNullData9() throws Exception {
+   ResultSet res = executeQuery();
+   assertResultSet(res);
+   cleanupQuery(res);
+
+   executeString("DROP TABLE table1");
+ }
 }

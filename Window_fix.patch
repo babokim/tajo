@@ -1,0 +1,220 @@
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/eval/SimpleEvalNodeVisitor.java tajo-core/src/main/java/org/apache/tajo/engine/eval/SimpleEvalNodeVisitor.java
+index e4503e2..93f1f74 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/eval/SimpleEvalNodeVisitor.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/eval/SimpleEvalNodeVisitor.java
+@@ -66,10 +66,13 @@ public class SimpleEvalNodeVisitor<CONTEXT> {
+ 
+       // Functions
+       case FUNCTION:
+-        result = visitFuncCall(context, (GeneralFunctionEval) evalNode, stack);
++        result = visitFuncCall(context, (FunctionEval) evalNode, stack);
+         break;
+       case AGG_FUNCTION:
+-        result = visitAggrFuncCall(context, (AggregationFunctionCallEval) evalNode, stack);
++        result = visitFuncCall(context, (FunctionEval) evalNode, stack);
++        break;
++      case WINDOW_FUNCTION:
++        result = visitFuncCall(context, (FunctionEval) evalNode, stack);
+         break;
+ 
+       default:
+@@ -163,11 +166,7 @@ public class SimpleEvalNodeVisitor<CONTEXT> {
+   // Functions
+   ///////////////////////////////////////////////////////////////////////////////////////////////
+ 
+-  public EvalNode visitFuncCall(CONTEXT context, GeneralFunctionEval evalNode, Stack<EvalNode> stack) {
+-    return visitDefaultFunctionEval(context, stack, evalNode);
+-  }
+-
+-  public EvalNode visitAggrFuncCall(CONTEXT context, AggregationFunctionCallEval evalNode, Stack<EvalNode> stack) {
++  public EvalNode visitFuncCall(CONTEXT context, FunctionEval evalNode, Stack<EvalNode> stack) {
+     return visitDefaultFunctionEval(context, stack, evalNode);
+   }
+ }
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/LogicalPlanner.java tajo-core/src/main/java/org/apache/tajo/engine/planner/LogicalPlanner.java
+index ef99067..04fa1f0 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/LogicalPlanner.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/LogicalPlanner.java
+@@ -208,7 +208,11 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
+     LogicalNode child = visit(context, stack, projection.getChild());
+ 
+     if (block.hasWindowSpecs()) {
+-      child = insertWindowAggNode(context, child, stack, referenceNames, referencesPair.getSecond());
++      LogicalNode windowAggNode =
++          insertWindowAggNode(context, child, stack, referenceNames, referencesPair.getSecond());
++      if (windowAggNode != null) {
++        child = windowAggNode;
++      }
+     }
+ 
+     // check if it is implicit aggregation. If so, it inserts group-by node to its child.
+@@ -454,8 +458,15 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
+     LogicalPlan plan = context.plan;
+     QueryBlock block = context.queryBlock;
+     WindowAggNode windowAggNode = context.plan.createNode(WindowAggNode.class);
+-    windowAggNode.setChild(child);
+-    windowAggNode.setInSchema(child.getOutSchema());
++    if (child.getType() == NodeType.LIMIT) {
++      LimitNode limitNode = (LimitNode) child;
++      windowAggNode.setChild(limitNode.getChild());
++      windowAggNode.setInSchema(limitNode.getChild().getOutSchema());
++      limitNode.setChild(windowAggNode);
++    } else {
++      windowAggNode.setChild(child);
++      windowAggNode.setInSchema(child.getOutSchema());
++    }
+ 
+     List<String> winFuncRefs = new ArrayList<String>();
+     List<WindowFunctionEval> winFuncs = new ArrayList<WindowFunctionEval>();
+@@ -546,7 +557,16 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
+     }
+     windowAggNode.setTargets(targets);
+     verifyProjectedFields(block, windowAggNode);
+-    return windowAggNode;
++
++
++    if (child.getType() == NodeType.LIMIT) {
++      LimitNode limitNode = (LimitNode) child;
++      limitNode.setInSchema(windowAggNode.getOutSchema());
++      limitNode.setOutSchema(windowAggNode.getOutSchema());
++      return null;
++    } else {
++      return windowAggNode;
++    }
+   }
+ 
+   /**
+diff --git tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/WinAggregateExec.java tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/WinAggregateExec.java
+index f13591f..3b712dd 100644
+--- tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/WinAggregateExec.java
++++ tajo-core/src/main/java/org/apache/tajo/engine/planner/physical/WinAggregateExec.java
+@@ -50,8 +50,10 @@ public class WinAggregateExec extends UnaryPhysicalExec {
+   protected final int outputColumnNum;
+   protected final int nonFunctionColumnNum;
+   protected final int nonFunctionColumns[];
++
+   protected final int functionNum;
+   protected final WindowFunctionEval functions[];
++
+   protected Schema schemaForOrderBy;
+   protected int sortKeyColumns[];
+   protected final boolean hasPartitionKeys;
+@@ -118,7 +120,7 @@ public class WinAggregateExec extends UnaryPhysicalExec {
+       endUnboundedFollowingFlags = new boolean[functions.length];
+       endCurrentRowFlags = new boolean[functions.length];
+ 
+-      List<Column> additionalSortColumns = Lists.newArrayList();
++      List<Column> additionalSortKeyColumns = Lists.newArrayList();
+       Schema rewrittenSchema = new Schema(outSchema);
+       for (int i = 0; i < functions.length; i++) {
+         WindowSpec.WindowEndBound endBound = functions[i].getWindowFrame().getEndBound();
+@@ -144,17 +146,17 @@ public class WinAggregateExec extends UnaryPhysicalExec {
+ 
+           for (SortSpec sortSpec : functions[i].getSortSpecs()) {
+             if (!rewrittenSchema.contains(sortSpec.getSortKey())) {
+-              additionalSortColumns.add(sortSpec.getSortKey());
++              additionalSortKeyColumns.add(sortSpec.getSortKey());
+             }
+           }
+         }
+       }
+ 
+-      sortKeyColumns = new int[additionalSortColumns.size()];
++      sortKeyColumns = new int[additionalSortKeyColumns.size()];
+       schemaForOrderBy = new Schema(outSchema);
+-      for (int i = 0; i < additionalSortColumns.size(); i++) {
+-        sortKeyColumns[i] = inSchema.getColumnId(additionalSortColumns.get(i).getQualifiedName());
+-        schemaForOrderBy.addColumn(additionalSortColumns.get(i));
++      for (int i = 0; i < additionalSortKeyColumns.size(); i++) {
++        sortKeyColumns[i] = i;
++        schemaForOrderBy.addColumn(additionalSortKeyColumns.get(i));
+       }
+     } else {
+       functions = new WindowFunctionEval[0];
+@@ -275,7 +277,7 @@ public class WinAggregateExec extends UnaryPhysicalExec {
+         projectedTuple.put(c, inTuple.get(nonFunctionColumns[c]));
+       }
+       for (int c = 0; c < sortKeyColumns.length; c++) {
+-        projectedTuple.put(c, inTuple.get(sortKeyColumns[i]));
++        projectedTuple.put(outputColumnNum + c, inTuple.get(sortKeyColumns[c]));
+       }
+ 
+       evaluatedTuples.add(projectedTuple);
+@@ -283,8 +285,9 @@ public class WinAggregateExec extends UnaryPhysicalExec {
+ 
+     for (int idx = 0; idx < functions.length; idx++) {
+       if (orderedFuncFlags[idx]) {
+-        comp = new TupleComparator(schemaForOrderBy, functions[idx].getSortSpecs());
++        comp = new TupleComparator(inSchema, functions[idx].getSortSpecs());
+         Collections.sort(accumulatedInTuples, comp);
++        comp = new TupleComparator(schemaForOrderBy, functions[idx].getSortSpecs());
+         Collections.sort(evaluatedTuples, comp);
+       }
+ 
+diff --git tajo-core/src/test/java/org/apache/tajo/engine/query/TestWindowQuery.java tajo-core/src/test/java/org/apache/tajo/engine/query/TestWindowQuery.java
+index c510e94..a15e903 100644
+--- tajo-core/src/test/java/org/apache/tajo/engine/query/TestWindowQuery.java
++++ tajo-core/src/test/java/org/apache/tajo/engine/query/TestWindowQuery.java
+@@ -116,6 +116,35 @@ public class TestWindowQuery extends QueryTestCaseBase {
+   }
+ 
+   @Test
++  public final void testWindowBeforeLimit() throws Exception {
++    ResultSet res = executeString(
++        "select r_name, rank() over (order by r_regionkey) as ran from region limit 3;"
++    );
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++  @Test
++  public final void testWindowWithSubQuery() throws Exception {
++    ResultSet res = executeString(
++        "select r_name, c, rank() over (order by r_regionkey) as ran from " +
++            "(select r_name, r_regionkey, count(*) as c from region group by r_name, r_regionkey) a;"
++    );
++    assertResultSet(res);
++    cleanupQuery(res);
++  }
++
++//  @Test
++//  public final void testWindowWithSubQuery2() throws Exception {
++//    ResultSet res = executeString(
++//        "select r_name, c, rank() over (partition by r_regionkey order by r_regionkey) as ran from " +
++//            "(select r_name, r_regionkey, count(*) as c from region group by r_name, r_regionkey) a;"
++//    );
++//    assertResultSet(res);
++//    cleanupQuery(res);
++//  }
++
++  @Test
+   public final void rowNumber1() throws Exception {
+     ResultSet res = executeString(
+         "SELECT l_orderkey, row_number() OVER () as row_num FROM LINEITEM");
+diff --git tajo-core/src/test/resources/results/TestWindowQuery/testWindowBeforeLimit.result tajo-core/src/test/resources/results/TestWindowQuery/testWindowBeforeLimit.result
+new file mode 100644
+index 0000000..b01d89a
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestWindowQuery/testWindowBeforeLimit.result
+@@ -0,0 +1,5 @@
++r_name,ran
++-------------------------------
++AFRICA,1
++AMERICA,2
++ASIA,3
+\ No newline at end of file
+diff --git tajo-core/src/test/resources/results/TestWindowQuery/testWindowWithSubQuery.result tajo-core/src/test/resources/results/TestWindowQuery/testWindowWithSubQuery.result
+new file mode 100644
+index 0000000..bb3d8e6
+--- /dev/null
++++ tajo-core/src/test/resources/results/TestWindowQuery/testWindowWithSubQuery.result
+@@ -0,0 +1,7 @@
++r_name,c,ran
++-------------------------------
++AFRICA,1,1
++AMERICA,1,2
++ASIA,1,3
++EUROPE,1,4
++MIDDLE EAST,1,5
+\ No newline at end of file
+
