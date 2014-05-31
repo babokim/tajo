@@ -88,7 +88,9 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
       if (first && i > 0) {
         // All SortAggregateExec uses same SeqScanExec object.
         // After running sort, rescan() should be called.
-        aggregateExecs[i].rescan();
+        if (currentTuples[i-1] != null) {
+          aggregateExecs[i].rescan();
+        }
       }
       currentTuples[i] = aggregateExecs[i].next();
 
@@ -99,8 +101,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
 
     // If DistinctGroupbySortAggregationExec received NullDatum and didn't has any grouping keys,
     // it should return primitive values for NullDatum.
-    if (allNull && groupbyNodeNum == 1 && aggregateExecs.length == 1 && first)   {
-      if (aggregateExecs[0].groupingKeyNum == 0) {
+      if (allNull && aggregateExecs[0].groupingKeyNum == 0 && first)   {  
         Tuple tuple = new VTuple(aggregateExecs[0].aggFunctionsNum);
         NullDatum nullDatum = DatumFactory.createNullDatum();
 
@@ -125,7 +126,6 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
         first = false;
         return tuple;
       }
-    }
 
     first = false;
 
