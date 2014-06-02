@@ -16,10 +16,15 @@ Release 0.9.0 - unreleased
   IMPROVEMENT
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     TAJO-846: Clean up the task history in woker. (jinho)
 
 =======
 >>>>>>> ae656cd906191ac3712e0367614f8235f0a27e9a
+=======
+    TAJO-846: Clean up the task history in woker. (jinho)
+
+>>>>>>> 443e76bdcca47912033187740f63c1ce1d3e4ac3
     TAJO-842: NULL handling in JDBC. (Hyoungjun Kim via jinho)
 
     TAJO-699: Create a table using LIKE. (Prafulla T via hyunsik)
