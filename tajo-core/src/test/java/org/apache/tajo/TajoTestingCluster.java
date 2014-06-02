@@ -581,7 +581,17 @@ public class TajoTestingCluster {
         getStorageManager().getWarehouseDir();
     fs.mkdirs(rootDir);
     for (int i = 0; i < names.length; i++) {
-      createTable(names[i], schemas[i], tableOption, tables[i]);
+      //createTable(names[i], schemas[i], tableOption, tables[i]);
+      Path tablePath = new Path(rootDir, names[i]);
+      fs.mkdirs(tablePath);
+      Path dfsPath = new Path(tablePath, names[i] + ".tbl");
+      FSDataOutputStream out = fs.create(dfsPath);
+      for (int j = 0; j < tables[i].length; j++) {
+        out.write((tables[i][j]+"\n").getBytes());
+      }
+      out.close();
+      TableMeta meta = CatalogUtil.newTableMeta(CatalogProtos.StoreType.CSV, tableOption);
+      client.createExternalTable(names[i], schemas[i], tablePath, meta);
     }
     Thread.sleep(1000);
     ResultSet res = client.executeQueryAndGetResult(query);
