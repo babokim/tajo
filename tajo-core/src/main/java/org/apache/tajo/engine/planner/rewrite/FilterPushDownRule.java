@@ -151,10 +151,6 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     return selNode;
   }
 
-  private boolean isOuterJoin(JoinType joinType) {
-    return joinType == JoinType.LEFT_OUTER || joinType == JoinType.RIGHT_OUTER || joinType==JoinType.FULL_OUTER;
-  }
-
   @Override
   public LogicalNode visitJoin(FilterPushDownContext context, LogicalPlan plan, LogicalPlan.QueryBlock block, JoinNode joinNode,
                                Stack<LogicalNode> stack) throws PlanningException {
@@ -165,7 +161,7 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     // get the two operands of the join operation as well as the join type
     JoinType joinType = joinNode.getJoinType();
     EvalNode joinQual = joinNode.getJoinQual();
-    if (joinQual != null && isOuterJoin(joinType)) {
+    if (joinQual != null && LogicalPlanner.isOuterJoin(joinType)) {
       BinaryEval binaryEval = (BinaryEval) joinQual;
       // if both are fields
       if (binaryEval.getLeftExpr().getType() == EvalType.FIELD &&
@@ -210,58 +206,86 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
             throw new InvalidQueryException("Incorrect Logical Query Plan with regard to outer join");
           }
         }
-
-        // retain in this outer join node's JoinQual those selection predicates
-        // related to the outer join's null supplier(s)
-        List<EvalNode> matched2 = Lists.newArrayList();
-        for (EvalNode eval : context.pushingDownFilters) {
-
-          Set<Column> columnRefs = EvalTreeUtil.findUniqueColumns(eval);
-          Set<String> tableNames = Sets.newHashSet();
-          // getting distinct table references
-          for (Column col : columnRefs) {
-            if (!tableNames.contains(col.getQualifier())) {
-              tableNames.add(col.getQualifier());
-            }
-          }
-
-          //if the predicate involves any of the null suppliers
-          boolean shouldKeep=false;
-          Iterator<String> it2 = nullSuppliers.iterator();
-          while(it2.hasNext()){
-            if(tableNames.contains(it2.next()) == true) {
-              shouldKeep = true;
-            }
-          }
-
-          if(shouldKeep == true) {
-            matched2.add(eval);
-          }
-
-        }
-
-        // merge the retained predicates and establish them in the current outer join node.
-        // Then remove them from the pushingDownFilters
-        EvalNode qual2 = null;
-        if (matched2.size() > 1) {
-          // merged into one eval tree
-          qual2 = AlgebraicUtil.createSingletonExprFromCNF(
-              matched2.toArray(new EvalNode[matched2.size()]));
-        } else if (matched2.size() == 1) {
-          // if the number of matched expr is one
-          qual2 = matched2.get(0);
-        }
-
-        if (qual2 != null) {
-          EvalNode conjQual2 = AlgebraicUtil.createSingletonExprFromCNF(joinNode.getJoinQual(), qual2);
-          joinNode.setJoinQual(conjQual2);
-          context.pushingDownFilters.removeAll(matched2);
-        } // for the remaining context.pushingDownFilters, push it as usual
       }
     }
 
+    // get evals from ON clause
+    List<EvalNode> onConditions = new ArrayList<EvalNode>();
     if (joinNode.hasJoinQual()) {
-      context.addFiltersTobePushed(Sets.newHashSet(AlgebraicUtil.toConjunctiveNormalFormArray(joinNode.getJoinQual())));
+      onConditions.addAll(Sets.newHashSet(AlgebraicUtil.toConjunctiveNormalFormArray(joinNode.getJoinQual())));
+    }
+
+    boolean isTopMostJoin = stack.peek().getType() != NodeType.JOIN;
+
+    List<EvalNode> outerJoinPredicationEvals = new ArrayList<EvalNode>();
+    List<EvalNode> outerJoinFilterEvalsExcludePredication = new ArrayList<EvalNode>();
+    if (LogicalPlanner.isOuterJoin(joinNode.getJoinType())) {
+      // TAJO-853
+      // In the case of top most JOIN, all filters except JOIN condition aren't pushed down.
+      // That filters are processed by SELECTION NODE.
+      Set<String> nullSupplyingTableNameSet;
+      if (joinNode.getJoinType() == JoinType.RIGHT_OUTER) {
+        nullSupplyingTableNameSet = TUtil.newHashSet(PlannerUtil.getRelationLineage(joinNode.getLeftChild()));
+      } else {
+        nullSupplyingTableNameSet = TUtil.newHashSet(PlannerUtil.getRelationLineage(joinNode.getRightChild()));
+      }
+
+      for (EvalNode eachEval: context.pushingDownFilters) {
+//        if (isTopMostJoin && !EvalTreeUtil.isJoinQual(eachEval, true)) {
+//          outerJoinFilterEvalsExcludePredication.add(eachEval);
+//        } else {
+//          outerJoinPredicationEvals.add(eachEval);
+//        }
+        if (EvalTreeUtil.isJoinQual(eachEval, true)) {
+          outerJoinPredicationEvals.add(eachEval);
+        } else {
+          Set<Column> columns = EvalTreeUtil.findUniqueColumns(eachEval);
+          boolean canPushDown = true;
+          for (Column eachColumn: columns) {
+            if (nullSupplyingTableNameSet.contains(eachColumn.getQualifier())) {
+              canPushDown = false;
+              break;
+            }
+          }
+          if (canPushDown) {
+            context.pushingDownFilters.add(eachEval);
+          } else {
+            outerJoinFilterEvalsExcludePredication.add(eachEval);
+          }
+        }
+      }
+
+//      context.pushingDownFilters.removeAll(outerJoinFilterEvalsExcludePredication);
+
+      Set<String> preservedTableNameSet;
+      if (joinNode.getJoinType() == JoinType.RIGHT_OUTER) {
+        preservedTableNameSet = TUtil.newHashSet(PlannerUtil.getRelationLineage(joinNode.getRightChild()));
+      } else {
+        preservedTableNameSet = TUtil.newHashSet(PlannerUtil.getRelationLineage(joinNode.getLeftChild()));
+      }
+      for (EvalNode eachOnEval: onConditions) {
+        if (EvalTreeUtil.isJoinQual(eachOnEval, true)) {
+          // If join condition, processing in the JoinNode.
+          outerJoinPredicationEvals.add(eachOnEval);
+        } else {
+          // If Eval has a column which belong to Preserved Row table, not using to push down but using JoinCondition
+          Set<Column> columns = EvalTreeUtil.findUniqueColumns(eachOnEval);
+          boolean canPushDown = true;
+          for (Column eachColumn: columns) {
+            if (preservedTableNameSet.contains(eachColumn.getQualifier())) {
+              canPushDown = false;
+              break;
+            }
+          }
+          if (canPushDown) {
+            context.pushingDownFilters.add(eachOnEval);
+          } else {
+            outerJoinPredicationEvals.add(eachOnEval);
+          }
+        }
+      }
+    } else {
+      context.pushingDownFilters.addAll(onConditions);
     }
 
     List<EvalNode> notMatched = new ArrayList<EvalNode>();
@@ -283,9 +307,13 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     context.addFiltersTobePushed(notMatched);
 
     List<EvalNode> matched = Lists.newArrayList();
-    for (EvalNode eval : context.pushingDownFilters) {
-      if (LogicalPlanner.checkIfBeEvaluatedAtJoin(block, eval, joinNode, stack.peek().getType() != NodeType.JOIN)) {
-        matched.add(eval);
+    if(LogicalPlanner.isOuterJoin(joinNode.getJoinType())) {
+      matched.addAll(outerJoinPredicationEvals);
+    } else {
+      for (EvalNode eval : context.pushingDownFilters) {
+        if (LogicalPlanner.checkIfBeEvaluatedAtJoin(block, eval, joinNode, isTopMostJoin)) {
+          matched.add(eval);
+        }
       }
     }
 
@@ -308,6 +336,7 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
       context.pushingDownFilters.removeAll(matched);
     }
 
+    context.pushingDownFilters.addAll(outerJoinFilterEvalsExcludePredication);
     return joinNode;
   }
 

@@ -987,8 +987,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
           block.namedExprsMgr.markAsEvaluated(namedExpr.getAlias(), evalNode);
           newlyEvaluatedExprs.add(namedExpr.getAlias());
         }
-      } catch (VerifyException ve) {} catch (PlanningException e) {
-        e.printStackTrace();
+      } catch (VerifyException ve) {
+      } catch (PlanningException e) {
       }
     }
     return newlyEvaluatedExprs;
@@ -1467,6 +1467,33 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     return dropDatabaseNode;
   }
 
+  public LogicalNode handleCreateTableLike(PlanContext context, CreateTable expr, CreateTableNode createTableNode)
+    throws PlanningException {
+    String parentTableName = expr.getLikeParentTableName();
+
+    if (CatalogUtil.isFQTableName(parentTableName) == false) {
+      parentTableName =
+	CatalogUtil.buildFQName(context.session.getCurrentDatabase(),
+				parentTableName);
+    }
+    TableDesc parentTableDesc = catalog.getTableDesc(parentTableName);
+    if(parentTableDesc == null)
+      throw new PlanningException("Table '"+parentTableName+"' does not exist");
+    PartitionMethodDesc partitionDesc = parentTableDesc.getPartitionMethod();
+    createTableNode.setTableSchema(parentTableDesc.getSchema());
+    createTableNode.setPartitionMethod(partitionDesc);
+
+    createTableNode.setStorageType(parentTableDesc.getMeta().getStoreType());
+    createTableNode.setOptions(parentTableDesc.getMeta().getOptions());
+
+    createTableNode.setExternal(parentTableDesc.isExternal());
+    if(parentTableDesc.isExternal()) {
+      createTableNode.setPath(parentTableDesc.getPath());
+    }
+    return createTableNode;
+  }
+
+
   @Override
   public LogicalNode visitCreateTable(PlanContext context, Stack<Expr> stack, CreateTable expr)
       throws PlanningException {
@@ -1481,7 +1508,9 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
       createTableNode.setTableName(
           CatalogUtil.buildFQName(context.session.getCurrentDatabase(), expr.getTableName()));
     }
-
+    // This is CREATE TABLE <tablename> LIKE <parentTable>
+    if(expr.getLikeParentTableName() != null)
+      return handleCreateTableLike(context, expr, createTableNode);
 
     if (expr.hasStorageType()) { // If storage type (using clause) is specified
       createTableNode.setStorageType(CatalogUtil.getStoreType(expr.getStorageType()));
@@ -1716,22 +1745,25 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     // at the topmost join operator.
     // TODO - It's also valid that case-when is evalauted at the topmost outer operator.
     //        But, how can we know there is no further outer join operator after this node?
-    if (!checkIfCaseWhenWithOuterJoinBeEvaluated(block, evalNode, isTopMostJoin)) {
-      return false;
+    if (containsOuterJoin(block)) {
+      if (!isTopMostJoin) {
+        Collection<EvalNode> found = EvalTreeUtil.findOuterJoinConditionEvals(evalNode);
+        if (found.size() > 0) {
+          return false;
+        }
+      }
     }
 
     return true;
   }
 
-  private static boolean checkIfCaseWhenWithOuterJoinBeEvaluated(QueryBlock block, EvalNode evalNode,
-                                                                 boolean isTopMostJoin) {
-    if (block.containsJoinType(JoinType.LEFT_OUTER) || block.containsJoinType(JoinType.RIGHT_OUTER)) {
-      Collection<EvalNode> found = EvalTreeUtil.findOuterJoinRelatedEvals(evalNode);
-      if (found.size() > 0) {
-        return false;
-      }
-    }
-    return true;
+  public static boolean isOuterJoin(JoinType joinType) {
+    return joinType == JoinType.LEFT_OUTER || joinType == JoinType.RIGHT_OUTER || joinType==JoinType.FULL_OUTER;
+  }
+
+  public static boolean containsOuterJoin(QueryBlock block) {
+    return block.containsJoinType(JoinType.LEFT_OUTER) || block.containsJoinType(JoinType.RIGHT_OUTER) ||
+        block.containsJoinType(JoinType.FULL_OUTER);
   }
 
   /**
@@ -1755,8 +1787,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     }
 
     // Why? - When a {case when} is used with outer join, case when must be evaluated at topmost outer join.
-    if (block.containsJoinType(JoinType.LEFT_OUTER) || block.containsJoinType(JoinType.RIGHT_OUTER)) {
-      Collection<EvalNode> found = EvalTreeUtil.findOuterJoinRelatedEvals(evalNode);
+    if (containsOuterJoin(block)) {
+      Collection<EvalNode> found = EvalTreeUtil.findOuterJoinConditionEvals(evalNode);
       if (found.size() > 0) {
         return false;
       }

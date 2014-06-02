@@ -120,6 +120,7 @@ public class GlobalEngine extends AbstractService {
   public SubmitQueryResponse executeQuery(Session session, String query, boolean isJson) {
     LOG.info("Query: " + query);
     QueryContext queryContext = new QueryContext();
+    queryContext.putAll(session.getAllVariables());
     Expr planningContext;
 
     try {
@@ -257,7 +258,7 @@ public class GlobalEngine extends AbstractService {
       boolean isInsert = rootNode.getChild() != null && rootNode.getChild().getType() == NodeType.INSERT;
       if (isInsert) {
         InsertNode insertNode = rootNode.getChild();
-        insertNonFromQuery(insertNode, responseBuilder);
+        insertNonFromQuery(queryContext, insertNode, responseBuilder);
       } else {
         Schema schema = PlannerUtil.targetToSchema(targets);
         RowStoreUtil.RowStoreEncoder encoder = RowStoreUtil.createEncoder(schema);
@@ -300,7 +301,7 @@ public class GlobalEngine extends AbstractService {
     return response;
   }
 
-  private void insertNonFromQuery(InsertNode insertNode, SubmitQueryResponse.Builder responseBuilder)
+  private void insertNonFromQuery(QueryContext queryContext, InsertNode insertNode, SubmitQueryResponse.Builder responseBuilder)
       throws Exception {
     String nodeUniqName = insertNode.getTableName() == null ? insertNode.getPath().getName() : insertNode.getTableName();
     String queryId = nodeUniqName + "_" + System.currentTimeMillis();
@@ -321,7 +322,7 @@ public class GlobalEngine extends AbstractService {
     }
 
     TaskAttemptContext taskAttemptContext =
-        new TaskAttemptContext(context.getConf(), null, (CatalogProtos.FragmentProto[]) null, stagingDir);
+        new TaskAttemptContext(context.getConf(), queryContext, null, (CatalogProtos.FragmentProto[]) null, stagingDir);
     taskAttemptContext.setOutputPath(new Path(stagingResultDir, "part-01-000000"));
 
     EvalExprExec evalExprExec = new EvalExprExec(taskAttemptContext, (EvalExprNode) insertNode.getChild());
@@ -478,10 +479,7 @@ public class GlobalEngine extends AbstractService {
       LOG.debug("Non Optimized Query: \n" + plan.toString());
       LOG.debug("=============================================");
     }
-    LOG.info("=============================================");
-    LOG.info("Non Optimized Query: \n" + plan.toString());
-    LOG.info("=============================================");
-    optimizer.optimize(plan);
+    optimizer.optimize(session, plan);
     LOG.info("=============================================");
     LOG.info("Optimized Query: \n" + plan.toString());
     LOG.info("=============================================");
