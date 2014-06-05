@@ -61,6 +61,8 @@ public class BasicQueryRewriteEngine implements QueryRewriteEngine {
       rule = rewriteRule.getValue();
       if (rule.isEligible(plan)) {
         plan = rule.rewrite(plan);
+	LOG.info("=========================>" + rule.getName());
+	LOG.info(plan);
         if (LOG.isDebugEnabled()) {
           LOG.debug("The rule \"" + rule.getName() + " \" rewrites the query.");
         }
