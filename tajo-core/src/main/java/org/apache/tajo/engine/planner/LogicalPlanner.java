@@ -226,9 +226,6 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     Target [] targets;
     targets = buildTargets(plan, block, referenceNames);
 
-    for (Target eachTarget: targets) {
-	    LOG.fatal(">>>>>>>>>>>>>>>" + eachTarget);
-    }    
     // Set ProjectionNode
     projectionNode = context.queryBlock.getNodeFromExpr(projection);
     projectionNode.setInSchema(child.getOutSchema());

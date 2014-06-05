@@ -19,6 +19,7 @@
 package org.apache.tajo.engine.planner;
 
 import org.apache.tajo.algebra.*;
+import org.apache.tajo.*;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableDesc;
@@ -246,9 +247,10 @@ public class PreLogicalPlanVerifier extends BaseAlgebraVisitor <PreLogicalPlanVe
         }
       } else {
         if (expr.hasTableName()) {
-          String qualifiedName = CatalogUtil.buildFQName(context.session.getCurrentDatabase(),
-              expr.getTableName());
-
+	  String qualifiedName = expr.getTableName();
+	  if (TajoConstants.EMPTY_STRING.equals(CatalogUtil.extractQualifier(expr.getTableName()))) {
+            qualifiedName = CatalogUtil.buildFQName(context.session.getCurrentDatabase(), expr.getTableName());
+	  }
           TableDesc table = catalog.getTableDesc(qualifiedName);
           if (table.hasPartition()) {
             int columnSize = table.getSchema().getColumns().size();
