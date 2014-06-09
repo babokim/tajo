@@ -53,6 +53,9 @@ public class AggregationFunctionCallEval extends FunctionEval implements Cloneab
     }
 
     if (argEvals != null) {
+      if (argEvals.length != tuple.size()) {
+         System.out.println(">>>>>>>>>>>>>>>Too small:" + argEvals.length + "," + tuple.size() + "," + this);
+      }
       for (int i = 0; i < argEvals.length; i++) {
         params.put(i, argEvals[i].eval(schema, tuple));
       }

@@ -200,6 +200,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
             fragmentsForNonLeafTask[1] = castEvent.getRightFragments().toArray(new FileFragment[]{})[0];
           }
         }
+        LOG.fatal(">>>>>>>>>>>>>>>>>FragmentScheduleEvent:" + scheduledObjectNum);
       } else if (event instanceof FetchScheduleEvent) {
         FetchScheduleEvent castEvent = (FetchScheduleEvent) event;
         Map<String, List<FetchImpl>> fetches = castEvent.getFetches();
@@ -214,6 +215,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
           }
         }
         subQuery.getEventHandler().handle(new TaskEvent(task.getId(), TaskEventType.T_SCHEDULE));
+        LOG.fatal(">>>>>>>>>>>>>>>>>FetchScheduleEvent:" + scheduledObjectNum);
       } else if (event instanceof QueryUnitAttemptScheduleEvent) {
         QueryUnitAttemptScheduleEvent castEvent = (QueryUnitAttemptScheduleEvent) event;
         if (context.isLeafQuery()) {

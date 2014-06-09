@@ -344,7 +344,7 @@ public class TajoCli {
       }
 
       if (wasError && context.getConf().getBoolVar(ConfVars.CLI_STOP_ERROR)) {
-        break;
+         System.exit(-1);        
       }
     }
   }

@@ -85,6 +85,11 @@ public class SortAggregateExec extends AggregationExec {
         } else {
           // aggregate
           for (int i = 0; i < aggFunctionsNum; i++) {
+            for (int j = 0; j < tuple.size(); j++) {
+              if (tuple.get(j) instanceof NullDatum) {
+                System.out.println(">>>>>>>>>>>>>>>>>null:" + i + "," + aggFunctions[i] + "," + j + "," + tuple);
+              }
+            }
             aggFunctions[i].merge(contexts[i], inSchema, tuple);
           }
         }

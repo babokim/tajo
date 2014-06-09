@@ -536,6 +536,13 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       }
     }
     TableStats inputStats = StatisticsUtil.aggregateTableStat(inputStatsList);
+    if (resultStatsList != null) {
+      for(TableStats eachStat: resultStatsList) {
+         LOG.fatal(">>>>>>>Stat:" + eachStat);
+      }
+    } else {
+         LOG.fatal(">>>>>>>Stat is null");
+    }
     TableStats resultStats = StatisticsUtil.aggregateTableStat(resultStatsList);
     return new TableStats[]{inputStats, resultStats};
   }

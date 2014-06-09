@@ -93,7 +93,9 @@ public class Repartitioner {
         childBlocks[1] = masterPlan.getChild(execBlock.getId(), 1);
 
         tablePath = storageManager.getTablePath(scans[i].getTableName());
+	SubQuery scanSubQuery = masterContext.getSubQuery(childBlocks[i].getId());
         stats[i] = masterContext.getSubQuery(childBlocks[i].getId()).getResultStats().getNumBytes();
+	LOG.fatal(">>>>>>>>>SubQuery:" + childBlocks[i].getId() + ", ScanId:" + scanSubQuery.getId() + "," + stats[i]);
         fragments[i] = new FileFragment(scans[i].getCanonicalName(), tablePath, 0, 0, new String[]{UNKNOWN_HOST});
       } else {
         tablePath = tableDesc.getPath();
@@ -156,8 +158,10 @@ public class Repartitioner {
       for (ScanNode scan : scans) {
         SubQuery childSubQuery = masterContext.getSubQuery(TajoIdUtils.createExecutionBlockId(scan.getCanonicalName()));
         for (QueryUnit task : childSubQuery.getQueryUnits()) {
+          LOG.fatal(">>>>>>>Inter:" + scan.getCanonicalName() + "," + task.getId() + "," + (task.getIntermediateData() == null ? "nul": "" + task.getIntermediateData().size()));
           if (task.getIntermediateData() != null && !task.getIntermediateData().isEmpty()) {
             for (IntermediateEntry intermEntry : task.getIntermediateData()) {
+              LOG.fatal(">>>>>>>Inter:PartitionId:" + intermEntry.getPartId() + "," + hashEntries.size());
               if (hashEntries.containsKey(intermEntry.getPartId())) {
                 Map<String, List<IntermediateEntry>> tbNameToInterm =
                     hashEntries.get(intermEntry.getPartId());
@@ -175,8 +179,9 @@ public class Repartitioner {
               }
             }
           } else {
+            //LOG.fatal(">>>>>>Inter:" + scan.getCanonicalName()+ " is empty");
             //if no intermidatedata(empty table), make empty entry
-            int emptyPartitionId = 0;
+            int emptyPartitionId = -1;
             if (hashEntries.containsKey(emptyPartitionId)) {
               Map<String, List<IntermediateEntry>> tbNameToInterm = hashEntries.get(emptyPartitionId);
               if (tbNameToInterm.containsKey(scan.getCanonicalName()))
@@ -285,14 +290,16 @@ public class Repartitioner {
                                      Map<String, List<IntermediateEntry>> grouppedPartitions) {
     Map<String, List<FetchImpl>> fetches = new HashMap<String, List<FetchImpl>>();
     for (ExecutionBlock execBlock : subQuery.getMasterPlan().getChilds(subQuery.getId())) {
-      Collection<FetchImpl> requests;
+      Collection<FetchImpl> requests = null;
       if (grouppedPartitions.containsKey(execBlock.getId().toString())) {
           requests = mergeShuffleRequest(execBlock.getId(), partitionId, HASH_SHUFFLE,
               grouppedPartitions.get(execBlock.getId().toString()));
+          fetches.put(execBlock.getId().toString(), Lists.newArrayList(requests));
       } else {
-        return;
       }
-      fetches.put(execBlock.getId().toString(), Lists.newArrayList(requests));
+    }
+    if (fetches.isEmpty()) {
+      return;
     }
     SubQuery.scheduleFetches(subQuery, fetches);
   }
