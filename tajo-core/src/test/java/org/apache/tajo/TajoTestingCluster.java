@@ -101,8 +101,6 @@ public class TajoTestingCluster {
     this.standbyWorkerMode = conf.getVar(ConfVars.RESOURCE_MANAGER_CLASS)
         .indexOf(TajoWorkerResourceManager.class.getName()) >= 0;
     conf.set(CommonTestingUtil.TAJO_TEST, "TRUE");
-
-//    conf.setBoolean(ConfVars.PLANNER_USE_FILTER_PUSHDOWN.varname, false);
   }
 
 	public TajoConf getConfiguration() {
@@ -581,7 +579,6 @@ public class TajoTestingCluster {
         getStorageManager().getWarehouseDir();
     fs.mkdirs(rootDir);
     for (int i = 0; i < names.length; i++) {
-      //createTable(names[i], schemas[i], tableOption, tables[i]);
       Path tablePath = new Path(rootDir, names[i]);
       fs.mkdirs(tablePath);
       Path dfsPath = new Path(tablePath, names[i] + ".tbl");
@@ -600,6 +597,11 @@ public class TajoTestingCluster {
 
   public static void createTable(String tableName, Schema schema,
                                  KeyValueSet tableOption, String[] tableDatas) throws Exception {
+    createTable(tableName, schema, tableOption, tableDatas, 1);
+  }
+
+  public static void createTable(String tableName, Schema schema,
+                                 KeyValueSet tableOption, String[] tableDatas, int numDataFiles) throws Exception {
     TpchTestBase instance = TpchTestBase.getInstance();
     TajoTestingCluster util = instance.getTestingCluster();
     while(true) {
@@ -619,12 +621,26 @@ public class TajoTestingCluster {
     }
     Path tablePath = new Path(rootDir, tableName);
     fs.mkdirs(tablePath);
-    Path dfsPath = new Path(tablePath, tableName + ".tbl");
-    FSDataOutputStream out = fs.create(dfsPath);
-    for (int j = 0; j < tableDatas.length; j++) {
-      out.write((tableDatas[j]+"\n").getBytes());
+    if (tableDatas.length > 0) {
+      int recordPerFile = tableDatas.length / numDataFiles;
+      if (recordPerFile == 0) {
+        recordPerFile = 1;
+      }
+      FSDataOutputStream out = null;
+      for (int j = 0; j < tableDatas.length; j++) {
+        if (out == null || j % recordPerFile == 0) {
+          if (out != null) {
+            out.close();
+          }
+          Path dfsPath = new Path(tablePath, tableName + j + ".tbl");
+          out = fs.create(dfsPath);
+        }
+        out.write((tableDatas[j] + "\n").getBytes());
+      }
+      if (out != null) {
+        out.close();
+      }
     }
-    out.close();
     TableMeta meta = CatalogUtil.newTableMeta(CatalogProtos.StoreType.CSV, tableOption);
     client.createExternalTable(tableName, schema, tablePath, meta);
   }
@@ -656,4 +672,3 @@ public class TajoTestingCluster {
     }
   }
 }
-

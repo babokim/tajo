@@ -88,14 +88,9 @@ public class Repartitioner {
       TableDesc tableDesc = masterContext.getTableDescMap().get(scans[i].getCanonicalName());
       if (tableDesc == null) { // if it is a real table stored on storage
         // TODO - to be fixed (wrong directory)
-        ExecutionBlock [] childBlocks = new ExecutionBlock[2];
-        childBlocks[0] = masterPlan.getChild(execBlock.getId(), 0);
-        childBlocks[1] = masterPlan.getChild(execBlock.getId(), 1);
-
         tablePath = storageManager.getTablePath(scans[i].getTableName());
-	SubQuery scanSubQuery = masterContext.getSubQuery(childBlocks[i].getId());
-        stats[i] = masterContext.getSubQuery(childBlocks[i].getId()).getResultStats().getNumBytes();
-	LOG.fatal(">>>>>>>>>SubQuery:" + childBlocks[i].getId() + ", ScanId:" + scanSubQuery.getId() + "," + stats[i]);
+        ExecutionBlockId scanEBId = TajoIdUtils.createExecutionBlockId(scans[i].getTableName());
+        stats[i] = masterContext.getSubQuery(scanEBId).getResultStats().getNumBytes();
         fragments[i] = new FileFragment(scans[i].getCanonicalName(), tablePath, 0, 0, new String[]{UNKNOWN_HOST});
       } else {
         tablePath = tableDesc.getPath();
@@ -117,13 +112,42 @@ public class Repartitioner {
       }
     }
 
-    // If one of inner join tables has no input data,
-    // it should return zero rows.
+    // If one of inner join tables has no input data, it should return zero rows.
     JoinNode joinNode = PlannerUtil.findMostBottomNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
-      if ( (joinNode.getJoinType().equals(JoinType.INNER))) {
+      if ( (joinNode.getJoinType() == JoinType.INNER)) {
         for (int i = 0; i < stats.length; i++) {
           if (stats[i] == 0) {
+            return;
+          }
+        }
+      }
+    }
+
+    // If node is outer join and a preserved relation is empty, it should return zero rows.
+    joinNode = PlannerUtil.findTopNode(execBlock.getPlan(), NodeType.JOIN);
+    if (joinNode != null) {
+      // find left top scan node
+      ScanNode leftScanNode = PlannerUtil.findTopNode(joinNode.getLeftChild(), NodeType.SCAN);
+      ScanNode rightScanNode = PlannerUtil.findTopNode(joinNode.getRightChild(), NodeType.SCAN);
+
+      long leftStats = -1;
+      long rightStats = -1;
+      if (stats.length == 2) {
+        for (int i = 0; i < stats.length; i++) {
+          if (scans[i].equals(leftScanNode)) {
+            leftStats = stats[i];
+          } else if (scans[i].equals(rightScanNode)) {
+            rightStats = stats[i];
+          }
+        }
+        if (joinNode.getJoinType() == JoinType.LEFT_OUTER) {
+          if (leftStats == 0) {
+            return;
+          }
+        }
+        if (joinNode.getJoinType() == JoinType.RIGHT_OUTER) {
+          if (rightStats == 0) {
             return;
           }
         }
@@ -158,10 +182,8 @@ public class Repartitioner {
       for (ScanNode scan : scans) {
         SubQuery childSubQuery = masterContext.getSubQuery(TajoIdUtils.createExecutionBlockId(scan.getCanonicalName()));
         for (QueryUnit task : childSubQuery.getQueryUnits()) {
-          LOG.fatal(">>>>>>>Inter:" + scan.getCanonicalName() + "," + task.getId() + "," + (task.getIntermediateData() == null ? "nul": "" + task.getIntermediateData().size()));
           if (task.getIntermediateData() != null && !task.getIntermediateData().isEmpty()) {
             for (IntermediateEntry intermEntry : task.getIntermediateData()) {
-              LOG.fatal(">>>>>>>Inter:PartitionId:" + intermEntry.getPartId() + "," + hashEntries.size());
               if (hashEntries.containsKey(intermEntry.getPartId())) {
                 Map<String, List<IntermediateEntry>> tbNameToInterm =
                     hashEntries.get(intermEntry.getPartId());
@@ -179,9 +201,8 @@ public class Repartitioner {
               }
             }
           } else {
-            //LOG.fatal(">>>>>>Inter:" + scan.getCanonicalName()+ " is empty");
             //if no intermidatedata(empty table), make empty entry
-            int emptyPartitionId = -1;
+            int emptyPartitionId = 0;
             if (hashEntries.containsKey(emptyPartitionId)) {
               Map<String, List<IntermediateEntry>> tbNameToInterm = hashEntries.get(emptyPartitionId);
               if (tbNameToInterm.containsKey(scan.getCanonicalName()))
@@ -290,15 +311,15 @@ public class Repartitioner {
                                      Map<String, List<IntermediateEntry>> grouppedPartitions) {
     Map<String, List<FetchImpl>> fetches = new HashMap<String, List<FetchImpl>>();
     for (ExecutionBlock execBlock : subQuery.getMasterPlan().getChilds(subQuery.getId())) {
-      Collection<FetchImpl> requests = null;
       if (grouppedPartitions.containsKey(execBlock.getId().toString())) {
-          requests = mergeShuffleRequest(execBlock.getId(), partitionId, HASH_SHUFFLE,
+        Collection<FetchImpl> requests = mergeShuffleRequest(execBlock.getId(), partitionId, HASH_SHUFFLE,
               grouppedPartitions.get(execBlock.getId().toString()));
-          fetches.put(execBlock.getId().toString(), Lists.newArrayList(requests));
-      } else {
+        fetches.put(execBlock.getId().toString(), Lists.newArrayList(requests));
       }
     }
+
     if (fetches.isEmpty()) {
+      LOG.info(subQuery.getId() + "'s " + partitionId + " partition has empty result.");
       return;
     }
     SubQuery.scheduleFetches(subQuery, fetches);
@@ -461,6 +482,12 @@ public class Repartitioner {
                                                  SubQuery subQuery, DataChannel channel,
                                                  int maxNum) {
     ExecutionBlock execBlock = subQuery.getBlock();
+    TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
+
+    if (totalStat.getNumRows() == 0) {
+      return;
+    }
+
     ScanNode scan = execBlock.getScanNodes()[0];
     Path tablePath;
     tablePath = subQuery.getContext().getStorageManager().getTablePath(scan.getTableName());
@@ -501,15 +528,9 @@ public class Repartitioner {
     // get a proper number of tasks
     int determinedTaskNum = Math.min(maxNum, finalFetches.size());
     LOG.info(subQuery.getId() + ", ScheduleHashShuffledFetches - Max num=" + maxNum + ", finalFetchURI=" + finalFetches.size());
-
     if (groupby != null && groupby.getGroupingColumns().length == 0) {
       determinedTaskNum = 1;
       LOG.info(subQuery.getId() + ", No Grouping Column - determinedTaskNum is set to 1");
-    } else {
-      TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
-      if (totalStat.getNumRows() == 0) {
-        determinedTaskNum = 1;
-      }
     }
 
     // set the proper number of tasks to the estimated task num

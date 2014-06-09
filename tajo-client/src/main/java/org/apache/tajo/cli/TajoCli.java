@@ -343,7 +343,7 @@ public class TajoCli {
         executeQuery(parsedResult.getStatement());
       }
 
-      if (wasError && context.getConf().getBoolVar(ConfVars.CLI_STOP_ERROR)) {
+      if (wasError && context.getConf().getBoolVar(ConfVars.CLI_ERROR_STOP)) {
          System.exit(-1);        
       }
     }
@@ -375,7 +375,7 @@ public class TajoCli {
         context.getOutput().flush();
       }
 
-      if (wasError && context.getConf().getBoolVar(ConfVars.CLI_STOP_ERROR)) {
+      if (wasError && context.getConf().getBoolVar(ConfVars.CLI_ERROR_STOP)) {
         break;
       }
     }

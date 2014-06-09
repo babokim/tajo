@@ -82,7 +82,7 @@ public class TestInsertQuery extends QueryTestCaseBase {
     res = executeFile("testInsertInto.sql");
     res.close();
 
-    List<Path> dataFiles = listTableFiles("table1");
+    List<Path> dataFiles = null;//listTableFiles("table1");
     assertEquals(2, dataFiles.size());
 
     for (int i = 0; i < dataFiles.size(); i++) {

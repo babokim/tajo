@@ -282,7 +282,7 @@ public class TestTajoCli {
 
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     tajoCli = new TajoCli(tajoConf, new String[]{}, System.in, out);
-    tajoCli.executeMetaCommand("\\set tajo.cli.stop.error true");
+    tajoCli.executeMetaCommand("\\set tajo.cli.error.stop true");
 
     tajoCli.executeScript("select count(*) from lineitem; " +
         "select count(*) from lineitem2; " +

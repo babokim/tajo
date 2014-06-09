@@ -4,6 +4,10 @@ Release 0.9.0 - unreleased
 
   NEW FEATURES
 
+    TAJO-860: Implements TRUNCATE table. (Hyoungjun Kim via hyunsik)
+
+    TAJO-849: Add Parquet storage to HCatalogStore. (jaehwa)
+
     TAJO-494: Extend TajoClient to run a query with a plan context serialized 
     as the JSON form. (jihoon)
 
@@ -13,18 +17,20 @@ Release 0.9.0 - unreleased
 
     TAJO-791: Implements ADD_DAYS() function. (Hyoungjun Kim via hyunsik)
 
+    TAJO-762: Implements current date/time function (Hyoungjun Kim via hyunsik)
+
   IMPROVEMENT
 
-<<<<<<< HEAD
-<<<<<<< HEAD
+    TAJO-843: implements COALESCE for BOOLEAN, DATE, TIME, TIMESTAMP. 
+    (Hyoungjun Kim via hyunsik)
+
+    TAJO-854: Supports INSERT INTO with UNION. (Hyoungjun Kim via jihoon)
+
+    TAJO-793: CLI should be able to exit when single query is failed.
+    (Hyoungjun Kim via jinho)
+
     TAJO-846: Clean up the task history in woker. (jinho)
 
-=======
->>>>>>> ae656cd906191ac3712e0367614f8235f0a27e9a
-=======
-    TAJO-846: Clean up the task history in woker. (jinho)
-
->>>>>>> 443e76bdcca47912033187740f63c1ce1d3e4ac3
     TAJO-842: NULL handling in JDBC. (Hyoungjun Kim via jinho)
 
     TAJO-699: Create a table using LIKE. (Prafulla T via hyunsik)
@@ -56,6 +62,9 @@ Release 0.9.0 - unreleased
     (Hyoungjun Kim via hyunsik)
 
   BUG FIXES
+
+    TAJO-863: Column order mismatched in the JOIN query with asterisk selection. 
+    (Hyoungjun Kim via hyunsik)
 
     TAJO-851: Timestamp type test of TestSQLExpression::testCastFromTable fails 
     in jenkins CI test. (Hyoungjun Kim via hyunsik)

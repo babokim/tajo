@@ -33,9 +33,7 @@ import org.junit.experimental.categories.Category;
 import java.sql.ResultSet;
 import java.util.List;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.*;
 
 @Category(IntegrationTest.class)
 public class TestCreateTable extends QueryTestCaseBase {
@@ -55,6 +53,7 @@ public class TestCreateTable extends QueryTestCaseBase {
   public final void testCreateTable1() throws Exception {
     List<String> createdNames = executeDDL("table1_ddl.sql", "table1", "table1");
     assertTableExists(createdNames.get(0));
+    executeString("DROP TABLE table1");
   }
 
   @Test

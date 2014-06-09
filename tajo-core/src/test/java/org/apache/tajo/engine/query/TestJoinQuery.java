@@ -46,14 +46,34 @@ public class TestJoinQuery extends QueryTestCaseBase {
   public TestJoinQuery(String joinOption) {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
 
-    if ("Hash".equals(joinOption)) {
+    testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_BROADCAST_JOIN_AUTO.varname,
+        ConfVars.DIST_QUERY_BROADCAST_JOIN_AUTO.defaultVal);
+    testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_BROADCAST_JOIN_THRESHOLD.varname,
+        ConfVars.DIST_QUERY_BROADCAST_JOIN_THRESHOLD.defaultVal);
+
+    testingCluster.setAllTajoDaemonConfValue(
+        ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD.varname,
+        ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD.defaultVal);
+
+    testingCluster.setAllTajoDaemonConfValue(ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD.varname,
+        ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD.defaultVal);
+    testingCluster.setAllTajoDaemonConfValue(ConfVars.EXECUTOR_GROUPBY_INMEMORY_HASH_THRESHOLD.varname,
+        ConfVars.EXECUTOR_GROUPBY_INMEMORY_HASH_THRESHOLD.defaultVal);
+
+    if (joinOption.indexOf("NoBroadcast") >= 0) {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_BROADCAST_JOIN_AUTO.varname, "false");
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_BROADCAST_JOIN_THRESHOLD.varname, "-1");
+    }
+
+    if (joinOption.indexOf("Hash") >= 0) {
       testingCluster.setAllTajoDaemonConfValue(
           ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD.varname, String.valueOf(256 * 1048576));
       testingCluster.setAllTajoDaemonConfValue(ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD.varname,
           String.valueOf(256 * 1048576));
       testingCluster.setAllTajoDaemonConfValue(ConfVars.EXECUTOR_GROUPBY_INMEMORY_HASH_THRESHOLD.varname,
           String.valueOf(256 * 1048576));
-    } else {
+    }
+    if (joinOption.indexOf("Sort") >= 0) {
       testingCluster.setAllTajoDaemonConfValue(
           ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD.varname, String.valueOf(1));
       testingCluster.setAllTajoDaemonConfValue(ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD.varname,
@@ -66,8 +86,10 @@ public class TestJoinQuery extends QueryTestCaseBase {
   @Parameters
   public static Collection<Object[]> generateParameters() {
     return Arrays.asList(new Object[][]{
+        {"Hash_NoBroadcast"},
+        {"Sort_NoBroadcast"},
         {"Hash"},
-        {"Sort"}
+        {"Sort"},
     });
   }
 
@@ -243,14 +265,11 @@ public class TestJoinQuery extends QueryTestCaseBase {
   public void testOuterJoinAndCaseWhen1() throws Exception {
     executeDDL("oj_table1_ddl.sql", "table1");
     executeDDL("oj_table2_ddl.sql", "table2");
-    try {
-      ResultSet res = executeQuery();
-      assertResultSet(res);
-      cleanupQuery(res);
-    } finally {
-      executeString("DROP TABLE table1");
-      executeString("DROP TABLE table2");
-    }
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+    executeString("DROP TABLE table1").close();
+    executeString("DROP TABLE table2").close();
   }
 
   @Test
@@ -340,10 +359,83 @@ public class TestJoinQuery extends QueryTestCaseBase {
   }
 
   @Test
-  public final void testFullOuterJoinWithEmptyTable1() throws Exception {
-    ResultSet res = executeQuery();
-    assertResultSet(res);
-    cleanupQuery(res);
+  public final void testLeftOuterJoinWithEmptySubquery1() throws Exception {
+    // Empty Null Supplying table
+    KeyValueSet tableOptions = new KeyValueSet();
+    tableOptions.put(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
+    tableOptions.put(StorageConstants.CSVFILE_NULL, "\\\\N");
+
+    Schema schema = new Schema();
+    schema.addColumn("id", Type.INT4);
+    schema.addColumn("name", Type.TEXT);
+    String[] data = new String[]{ "1|table11-1", "2|table11-2", "3|table11-3", "4|table11-4", "5|table11-5" };
+    TajoTestingCluster.createTable("table11", schema, tableOptions, data, 2);
+
+    data = new String[]{ "1|table11-1", "2|table11-2" };
+    TajoTestingCluster.createTable("table12", schema, tableOptions, data, 2);
+
+    try {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname, "2");
+
+      ResultSet res = executeString("select a.id, b.id from table11 a " +
+          "left outer join (" +
+          "select table12.id from table12 inner join lineitem on table12.id = lineitem.l_orderkey and table12.id > 10) b " +
+          "on a.id = b.id order by a.id");
+
+      String expected = "id,id\n" +
+          "-------------------------------\n" +
+          "1,null\n" +
+          "2,null\n" +
+          "3,null\n" +
+          "4,null\n" +
+          "5,null\n";
+
+      assertEquals(expected, resultSetToString(res));
+      cleanupQuery(res);
+    } finally {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname,
+          ConfVars.TESTCASE_MIN_TASK_NUM.defaultVal);
+      executeString("DROP TABLE table11 PURGE").close();
+      executeString("DROP TABLE table12 PURGE").close();
+    }
+  }
+
+  @Test
+  public final void testLeftOuterJoinWithEmptySubquery2() throws Exception {
+    //Empty Preserved Row table
+    KeyValueSet tableOptions = new KeyValueSet();
+    tableOptions.put(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
+    tableOptions.put(StorageConstants.CSVFILE_NULL, "\\\\N");
+
+    Schema schema = new Schema();
+    schema.addColumn("id", Type.INT4);
+    schema.addColumn("name", Type.TEXT);
+    String[] data = new String[]{ "1|table11-1", "2|table11-2", "3|table11-3", "4|table11-4", "5|table11-5" };
+    TajoTestingCluster.createTable("table11", schema, tableOptions, data, 2);
+
+    data = new String[]{ "1|table11-1", "2|table11-2" };
+    TajoTestingCluster.createTable("table12", schema, tableOptions, data, 2);
+
+    try {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname, "2");
+
+      ResultSet res = executeString("select a.id, b.id from " +
+          "(select table12.id, table12.name, lineitem.l_shipdate " +
+          "from table12 inner join lineitem on table12.id = lineitem.l_orderkey and table12.id > 10) a " +
+          "left outer join table11 b " +
+          "on a.id = b.id");
+
+      String expected = "id,id\n" +
+          "-------------------------------\n";
+
+      assertEquals(expected, resultSetToString(res));
+      cleanupQuery(res);
+    } finally {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname,
+          ConfVars.TESTCASE_MIN_TASK_NUM.defaultVal);
+      executeString("DROP TABLE table11 PURGE");
+      executeString("DROP TABLE table12 PURGE");
+    }
   }
 
   @Test
@@ -405,6 +497,17 @@ public class TestJoinQuery extends QueryTestCaseBase {
     executeString("CREATE TABLE JOINS.supplier_ as SELECT * FROM supplier");
     assertTableExists("joins.supplier_");
     ResultSet res = executeJsonQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+
+    executeString("DROP TABLE JOINS.part_ PURGE");
+    executeString("DROP TABLE JOINS.supplier_ PURGE");
+    executeString("DROP DATABASE JOINS");
+  }
+
+  @Test
+  public final void testJoinAsterisk() throws Exception {
+    ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
 
