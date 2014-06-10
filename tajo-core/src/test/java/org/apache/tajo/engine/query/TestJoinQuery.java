@@ -265,11 +265,14 @@ public class TestJoinQuery extends QueryTestCaseBase {
   public void testOuterJoinAndCaseWhen1() throws Exception {
     executeDDL("oj_table1_ddl.sql", "table1");
     executeDDL("oj_table2_ddl.sql", "table2");
-    ResultSet res = executeQuery();
-    assertResultSet(res);
-    cleanupQuery(res);
-    executeString("DROP TABLE table1").close();
-    executeString("DROP TABLE table2").close();
+    try {
+      ResultSet res = executeQuery();
+      assertResultSet(res);
+      cleanupQuery(res);
+    } finally {
+      executeString("DROP TABLE table1");
+      executeString("DROP TABLE table2");
+    }
   }
 
   @Test

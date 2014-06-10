@@ -168,6 +168,7 @@ public class AlgebraicUtil {
       return unaryEval;
     }
 
+    @Override
     public EvalNode visitFuncCall(Object context, GeneralFunctionEval evalNode, Stack<EvalNode> stack) {
       boolean constant = true;
 

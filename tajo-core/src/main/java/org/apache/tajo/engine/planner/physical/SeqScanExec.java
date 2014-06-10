@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.Schema;
@@ -32,18 +34,25 @@ import org.apache.tajo.engine.eval.FieldEval;
 import org.apache.tajo.engine.planner.Projector;
 import org.apache.tajo.engine.planner.Target;
 import org.apache.tajo.engine.planner.logical.ScanNode;
-import org.apache.tajo.engine.utils.*;
+import org.apache.tajo.engine.utils.SchemaUtil;
+import org.apache.tajo.engine.utils.TupleCache;
+import org.apache.tajo.engine.utils.TupleCacheKey;
+import org.apache.tajo.engine.utils.TupleUtil;
 import org.apache.tajo.storage.*;
-import org.apache.tajo.storage.Scanner;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 
 public class SeqScanExec extends PhysicalExec {
+  private final static Log LOG = LogFactory.getLog(SeqScanExec.class);
+
   private ScanNode plan;
 
   private Scanner scanner = null;
@@ -88,7 +97,6 @@ public class SeqScanExec extends PhysicalExec {
     Schema columnPartitionSchema = SchemaUtil.clone(partitionDesc.getExpressionSchema());
     String qualifier = inSchema.getColumn(0).getQualifier();
     columnPartitionSchema.setQualifier(qualifier);
-
     // Remove partition key columns from an input schema.
     this.inSchema = plan.getTableDesc().getSchema();
 

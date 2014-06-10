@@ -22,8 +22,8 @@ import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.TableMeta;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.conf.TajoConf;
-import org.apache.tajo.storage.fragment.Fragment;
 import org.apache.tajo.storage.fragment.FileFragment;
+import org.apache.tajo.storage.fragment.Fragment;
 
 import java.io.IOException;
 
@@ -55,7 +55,7 @@ public class StorageManager extends AbstractStorageManager {
 
   @Override
   public Scanner getScanner(TableMeta meta, Schema schema, Fragment fragment, Schema target) throws IOException {
-   if (fragment instanceof FileFragment) {
+    if (fragment instanceof FileFragment) {
       FileFragment fileFragment = (FileFragment)fragment;
       if (fileFragment.getEndKey() == 0) {
         Scanner scanner = new NullScanner(conf, schema, meta, fileFragment);

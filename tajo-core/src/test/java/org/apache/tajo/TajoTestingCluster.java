@@ -101,6 +101,8 @@ public class TajoTestingCluster {
     this.standbyWorkerMode = conf.getVar(ConfVars.RESOURCE_MANAGER_CLASS)
         .indexOf(TajoWorkerResourceManager.class.getName()) >= 0;
     conf.set(CommonTestingUtil.TAJO_TEST, "TRUE");
+
+//    conf.setBoolean(ConfVars.PLANNER_USE_FILTER_PUSHDOWN.varname, false);
   }
 
 	public TajoConf getConfiguration() {
@@ -579,16 +581,7 @@ public class TajoTestingCluster {
         getStorageManager().getWarehouseDir();
     fs.mkdirs(rootDir);
     for (int i = 0; i < names.length; i++) {
-      Path tablePath = new Path(rootDir, names[i]);
-      fs.mkdirs(tablePath);
-      Path dfsPath = new Path(tablePath, names[i] + ".tbl");
-      FSDataOutputStream out = fs.create(dfsPath);
-      for (int j = 0; j < tables[i].length; j++) {
-        out.write((tables[i][j]+"\n").getBytes());
-      }
-      out.close();
-      TableMeta meta = CatalogUtil.newTableMeta(CatalogProtos.StoreType.CSV, tableOption);
-      client.createExternalTable(names[i], schemas[i], tablePath, meta);
+      createTable(names[i], schemas[i], tableOption, tables[i]);
     }
     Thread.sleep(1000);
     ResultSet res = client.executeQueryAndGetResult(query);
