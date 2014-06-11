@@ -210,6 +210,15 @@ public class TajoConf extends Configuration {
     //////////////////////////////////
     QUERY_SESSION_TIMEOUT("tajo.query.session.timeout-sec", 60),
 
+
+    //////////////////////////////////
+    // SubQuery Configuration
+    //////////////////////////////////
+    SUB_QUERY_TASK_NUM_MB("tajo.sub-query.task.num.mb", 1048576),
+    SUB_QUERY_TASK_NUM_PER_VOLUME("tajo.sub-query.task.num.per-volume", 64),
+
+
+    //////////////////////////////////
     //////////////////////////////////
     // Shuffle Configuration
     //////////////////////////////////
@@ -217,6 +226,8 @@ public class TajoConf extends Configuration {
     SHUFFLE_SSL_ENABLED_KEY("tajo.pullserver.ssl.enabled", false),
     SHUFFLE_FILE_FORMAT("tajo.shuffle.file-format", "RAW"),
     SHUFFLE_FETCHER_PARALLEL_EXECUTION_MAX_NUM("tajo.shuffle.fetcher.parallel-execution.max-num", 2),
+    SHUFFLE_TASK_NUM_VOLUME("tajo.shuffle.task.num.volume", 128 * 1024 * 1024),
+
 
     //////////////////////////////////
     // Storage Configuration

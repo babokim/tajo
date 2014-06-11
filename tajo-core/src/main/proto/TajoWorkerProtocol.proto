@@ -145,6 +145,7 @@ enum ShuffleType {
   NONE_SHUFFLE = 0;
   HASH_SHUFFLE = 1;
   RANGE_SHUFFLE = 2;
+  PARTITION_SHUFFLE = 3;
 }
 
 enum TransmitType {

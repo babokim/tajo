@@ -819,7 +819,9 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         Repartitioner.scheduleFragmentsForJoinQuery(subQuery.schedulerContext, subQuery);
       } else { // Case 3: Others (Sort or Aggregation)
         int numTasks = getNonLeafTaskNum(subQuery);
-        Repartitioner.scheduleFragmentsForNonLeafTasks(subQuery.schedulerContext, masterPlan, subQuery, numTasks);
+        int partitionedTableNumTasks = getPartitionedTableTaskNum(subQuery);
+        Repartitioner.scheduleFragmentsForNonLeafTasks(subQuery.schedulerContext, masterPlan,
+            subQuery, numTasks, partitionedTableNumTasks);
       }
     }
 
@@ -840,6 +842,27 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       LOG.info("The determined number of non-leaf tasks is " + maxTaskNum);
       return maxTaskNum;
     }
+
+    /**
+     * Getting the desire number of tasks according to the volume of input data for inserting
+     * partitioned table
+     *
+     * @param subQuery
+     * @return
+     */
+    public static int getPartitionedTableTaskNum(SubQuery subQuery) {
+      TajoConf conf = subQuery.context.getConf();
+
+      // Getting intermediate data size
+      long volume = getInputVolume(subQuery.getMasterPlan(), subQuery.context, subQuery.getBlock());
+      int mb = (int) Math.ceil((double)volume / conf.getIntVar(ConfVars.SUB_QUERY_TASK_NUM_MB));
+      LOG.info("Table's volume is approximately " + mb + " MB");
+      // determine the number of task per 64MB
+      int maxTaskNum = Math.max(1, (int) Math.ceil((double)mb / conf.getIntVar(ConfVars.SUB_QUERY_TASK_NUM_PER_VOLUME)));
+      LOG.info("The determined number of non-leaf tasks is " + maxTaskNum);
+      return maxTaskNum;
+    }
+
 
     public static long getInputVolume(MasterPlan masterPlan, QueryMasterTask.QueryMasterTaskContext context,
                                       ExecutionBlock execBlock) {

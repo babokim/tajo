@@ -58,6 +58,7 @@ import java.util.*;
 import java.util.Map.Entry;
 
 import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.HASH_SHUFFLE;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE;
 import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.RANGE_SHUFFLE;
 
 /**
@@ -351,13 +352,17 @@ public class Repartitioner {
   }
 
   public static void scheduleFragmentsForNonLeafTasks(TaskSchedulerContext schedulerContext,
-                                                      MasterPlan masterPlan, SubQuery subQuery, int maxNum)
+                                                      MasterPlan masterPlan, SubQuery subQuery,
+                                                      int maxNum, int partitionedTableNumTasks)
       throws IOException {
     DataChannel channel = masterPlan.getIncomingChannels(subQuery.getBlock().getId()).get(0);
     if (channel.getShuffleType() == HASH_SHUFFLE) {
       scheduleHashShuffledFetches(schedulerContext, masterPlan, subQuery, channel, maxNum);
     } else if (channel.getShuffleType() == RANGE_SHUFFLE) {
       scheduleRangeShuffledFetches(schedulerContext, masterPlan, subQuery, channel, maxNum);
+    } else if (channel.getShuffleType() == PARTITION_SHUFFLE) {
+      schedulePartitionedTableShuffledFetches(schedulerContext, masterPlan, subQuery, channel,
+          partitionedTableNumTasks);
     } else {
       throw new InternalException("Cannot support partition type");
     }
@@ -540,6 +545,102 @@ public class Repartitioner {
     LOG.info(subQuery.getId() + ", DeterminedTaskNum : " + determinedTaskNum);
   }
 
+  public static void schedulePartitionedTableShuffledFetches(TaskSchedulerContext
+     schedulerContext, MasterPlan masterPlan, SubQuery subQuery, DataChannel channel, int maxNum) {
+    ExecutionBlock execBlock = subQuery.getBlock();
+    TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
+
+    if (totalStat.getNumRows() == 0) {
+      return;
+    }
+
+    ScanNode scan = execBlock.getScanNodes()[0];
+    Path tablePath;
+    tablePath = subQuery.getContext().getStorageManager().getTablePath(scan.getTableName());
+
+    FileFragment frag = new FileFragment(scan.getCanonicalName(), tablePath, 0, 0, new String[]{UNKNOWN_HOST});
+    List<FileFragment> fragments = new ArrayList<FileFragment>();
+    fragments.add(frag);
+    SubQuery.scheduleFragments(subQuery, fragments);
+
+    Map<QueryUnit.PullHost, List<IntermediateEntry>> hashedByHost;
+    Map<Integer, Collection<FetchImpl>> finalFetches = new HashMap<Integer, Collection<FetchImpl>>();
+
+    // including all partitions
+    List<FetchImpl> totalPartitions = new ArrayList<FetchImpl>();
+    for (ExecutionBlock block : masterPlan.getChilds(execBlock)) {
+      List<IntermediateEntry> partitions = new ArrayList<IntermediateEntry>();
+      for (QueryUnit tasks : subQuery.getContext().getSubQuery(block.getId()).getQueryUnits()) {
+        if (tasks.getIntermediateData() != null) {
+          partitions.addAll(tasks.getIntermediateData());
+        }
+      }
+
+      Map<Integer, List<IntermediateEntry>> hashed = hashByKey(partitions);
+      for (Entry<Integer, List<IntermediateEntry>> interm : hashed.entrySet()) {
+        hashedByHost = hashByHost(interm.getValue());
+        for (Entry<QueryUnit.PullHost, List<IntermediateEntry>> e : hashedByHost.entrySet()) {
+          FetchImpl fetch = new FetchImpl(e.getKey(), channel.getShuffleType(),
+              block.getId(), interm.getKey(), e.getValue());
+
+          if (finalFetches.containsKey(interm.getKey())) {
+            finalFetches.get(interm.getKey()).add(fetch);
+          } else {
+            finalFetches.put(interm.getKey(), TUtil.newList(fetch));
+          }
+
+          totalPartitions.add(fetch);
+        }
+      }
+    }
+
+    // Calculate another task number because determined task number may be ver small.
+    // In this case, a few worker of live workers will run for shuffle and we can't use tajo
+    // cluster resource effectively. Thus, we need to increment task number.
+    // The task number can be calculated with this formula: NUMBER = total bytes number / 128MB
+    // For reference, 128MB is not a fixed number. We need to optimize this formula.
+    int desiredNum = (int) Math.ceil((double) totalStat.getNumBytes() /
+        subQuery.getContext().getConf().getIntVar(ConfVars.SHUFFLE_TASK_NUM_VOLUME));
+
+    GroupbyNode groupby = PlannerUtil.findMostBottomNode(subQuery.getBlock().getPlan(), NodeType.GROUP_BY);
+    // get a proper number of tasks
+    int determinedTaskNum = Math.min(maxNum, finalFetches.size());
+    LOG.info(subQuery.getId() + ", ScheduleHashShuffledFetches - Max num=" + maxNum + ", finalFetchURI=" + finalFetches.size());
+    if (groupby != null && groupby.getGroupingColumns().length == 0) {
+      determinedTaskNum = 1;
+      LOG.info(subQuery.getId() + ", No Grouping Column - determinedTaskNum is set to 1");
+    }
+
+    if (determinedTaskNum < desiredNum && desiredNum < maxNum) {
+      schedulerContext.setEstimatedTaskNum(desiredNum);
+      scheduleFetchesByInputVolume(subQuery, totalPartitions, scan.getTableName(), desiredNum);
+    } else {
+      // set the proper number of tasks to the estimated task num
+      schedulerContext.setEstimatedTaskNum(determinedTaskNum);
+      // divide fetch uris into the the proper number of tasks in a round robin manner.
+      scheduleFetchesByRoundRobin(subQuery, finalFetches, scan.getTableName(), determinedTaskNum);
+      LOG.info(subQuery.getId() + ", DeterminedTaskNum : " + determinedTaskNum);
+    }
+  }
+
+  public static void scheduleFetchesByInputVolume(SubQuery subQuery, List<FetchImpl> partitions,
+                                                  String tableName, int num) {
+    int i;
+    Map<String, List<FetchImpl>>[] fetchesArray = new Map[num];
+    for (i = 0; i < num; i++) {
+      fetchesArray[i] = new HashMap<String, List<FetchImpl>>();
+    }
+    i = 0;
+
+    for (FetchImpl entry : partitions) {
+      TUtil.putToNestedList(fetchesArray[i++], tableName, entry);
+      if (i == num) i = 0;
+    }
+
+    for (Map<String, List<FetchImpl>> eachFetches : fetchesArray) {
+      SubQuery.scheduleFetches(subQuery, eachFetches);
+    }
+  }
 
   public static List<URI> createFetchURL(FetchImpl fetch, boolean includeParts) {
     String scheme = "http://";
@@ -554,6 +655,8 @@ public class Repartitioner {
       urlPrefix.append("h");
     } else if (fetch.getType() == RANGE_SHUFFLE) {
       urlPrefix.append("r").append("&").append(fetch.getRangeParams());
+    } else if (fetch.getType() == PARTITION_SHUFFLE) {
+      urlPrefix.append("p");
     }
 
     List<URI> fetchURLs = new ArrayList<URI>();

@@ -749,7 +749,10 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
       }
       return new RangeShuffleFileWriteExec(ctx, sm, subOp, plan.getInSchema(), plan.getInSchema(), sortSpecs);
 
-    case NONE_SHUFFLE:
+      case PARTITION_SHUFFLE:
+        return new HashShuffleFileWriteExec(ctx, sm, plan, subOp);
+
+      case NONE_SHUFFLE:
       return new StoreTableExec(ctx, plan, subOp);
 
     default:

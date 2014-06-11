@@ -25,17 +25,26 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
 import org.apache.hadoop.io.compress.DeflateCodec;
+import org.apache.tajo.QueryId;
 import org.apache.tajo.QueryTestCaseBase;
 import org.apache.tajo.TajoConstants;
 import org.apache.tajo.TajoTestingCluster;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableDesc;
+import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.ipc.ClientProtos;
+import org.apache.tajo.ipc.TajoWorkerProtocol;
+import org.apache.tajo.jdbc.TajoResultSet;
+import org.apache.tajo.master.querymaster.QueryMasterTask;
+import org.apache.tajo.master.querymaster.SubQuery;
+import org.apache.tajo.worker.TajoWorker;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.sql.ResultSet;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.Map;
 
 import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
@@ -58,7 +67,8 @@ public class TestTablePartitions extends QueryTestCaseBase {
 
     assertTrue(catalog.existsTable(DEFAULT_DATABASE_NAME, tableName));
     assertEquals(2, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getSchema().size());
-    assertEquals(3, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getLogicalSchema().size());
+    assertEquals(3, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getLogicalSchema()
+        .size());
 
     res = testBase.execute(
         "insert overwrite into " + tableName + " select l_orderkey, l_partkey, " +
@@ -77,7 +87,8 @@ public class TestTablePartitions extends QueryTestCaseBase {
     assertEquals(3, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getSchema().size());
     assertEquals(4, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getLogicalSchema().size());
 
-    res = executeString("insert overwrite into " + tableName + " (col1, col2, key) select l_orderkey, " +
+    res = executeString("insert overwrite into " + tableName + " (col1, col2, " +
+        "key) select l_orderkey, " +
         "l_partkey, l_quantity from lineitem");
     res.close();
   }
@@ -654,4 +665,120 @@ public class TestTablePartitions extends QueryTestCaseBase {
     assertResultSet(res, "case15.result");
     res.close();
   }
+
+
+  @Test
+  public final void testColumnPartitionedTableWithLargeData() throws Exception {
+    String tableName = CatalogUtil.normalizeIdentifier("testColumnPartitionedTableWithLargeData");
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("create table ").append(tableName).append(" ( \n");
+    sb.append("l_orderkey INT4, \n");
+    sb.append("l_partkey INT4, \n");
+    sb.append("l_suppkey INT4, \n");
+    sb.append("l_linenumber INT4, \n");
+    sb.append("l_quantity FLOAT8, \n");
+    sb.append("l_extendedprice FLOAT8, \n");
+    sb.append("l_discount FLOAT8, \n");
+    sb.append("l_tax FLOAT8, \n");
+    sb.append("l_returnflag TEXT, \n");
+    sb.append("l_linestatus TEXT, \n");
+    sb.append("l_shipdate TEXT, \n");
+    sb.append("l_commitdate TEXT, \n");
+    sb.append("l_receiptdate TEXT, \n");
+    sb.append("l_shipinstruct TEXT, \n");
+    sb.append("l_shipmode TEXT, \n");
+    sb.append("l_comment TEXT ) \n");
+    sb.append("partition by column(part INT4) \n");
+
+    ResultSet res = executeString(sb.toString());
+    res.close();
+
+    assertTrue(catalog.existsTable(DEFAULT_DATABASE_NAME, tableName));
+
+    res = executeString("insert overwrite into " + tableName
+        + "  select *, l_linenumber as part from lineitem_large");
+    res.close();
+
+    Collection<SubQuery> subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
+    Iterator iterator = subQueries.iterator();
+
+    boolean scheduled = false, partitionShuffle = false;
+    while (iterator.hasNext()) {
+      SubQuery subQuery = (SubQuery)iterator.next();
+      if (subQuery.getTotalScheduledObjectsCount() == 13) {
+        scheduled = true;
+      }
+      if (subQuery.getDataChannel().getShuffleType() == TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE) {
+        partitionShuffle = true;
+      }
+    }
+    assertFalse(scheduled);
+    assertTrue(partitionShuffle);
+
+    TableDesc desc = catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName);
+    assertPartitionDirectoriesWithLargeData(desc);
+
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_MB.varname
+        , "100");
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_PER_VOLUME
+        .varname, "3");
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SHUFFLE_TASK_NUM_VOLUME
+        .varname, "1000");
+
+    res = executeString("insert overwrite into " + tableName
+        + "  select *, l_linenumber as part from lineitem_large");
+    res.close();
+
+    subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
+    iterator = subQueries.iterator();
+
+    scheduled = false;
+    partitionShuffle = false;
+    while (iterator.hasNext()) {
+      SubQuery subQuery = (SubQuery)iterator.next();
+      if (subQuery.getTotalScheduledObjectsCount() == 13) {
+        scheduled = true;
+      }
+      if (subQuery.getDataChannel().getShuffleType() == TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE) {
+        partitionShuffle = true;
+      }
+    }
+    assertTrue(scheduled);
+    assertTrue(partitionShuffle);
+
+    desc = catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName);
+    assertPartitionDirectoriesWithLargeData(desc);
+  }
+
+
+  private Collection<SubQuery> getSubQueries(QueryId queryId) {
+    for (TajoWorker eachWorker: testingCluster.getTajoWorkers()) {
+      QueryMasterTask queryMasterTask = eachWorker.getWorkerContext().getQueryMaster().getQueryMasterTask(queryId, true);
+      if (queryMasterTask != null) {
+        return queryMasterTask.getQuery().getSubQueries();
+      }
+    }
+    fail("Can't find query from workers" + queryId);
+    return null;
+  }
+
+  private void assertPartitionDirectoriesWithLargeData(TableDesc desc) throws IOException {
+    FileSystem fs = FileSystem.get(conf);
+    Path path = desc.getPath();
+    assertTrue(fs.isDirectory(path));
+
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=1")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=2")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=3")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=4")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=5")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=6")));
+    assertTrue(fs.isDirectory(new Path(path.toUri() + "/part=7")));
+
+    if (!testingCluster.isHCatalogStoreRunning()) {
+      assertEquals(97, desc.getStats().getNumRows().intValue());
+    }
+  }
+
 }

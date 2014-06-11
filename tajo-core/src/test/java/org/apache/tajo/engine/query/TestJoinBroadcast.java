@@ -28,15 +28,18 @@ import org.apache.tajo.engine.planner.global.MasterPlan;
 import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.master.querymaster.QueryMasterTask;
+import org.apache.tajo.master.querymaster.SubQuery;
 import org.apache.tajo.worker.TajoWorker;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 import java.sql.ResultSet;
+import java.util.Collection;
+import java.util.Iterator;
 
-import static junit.framework.TestCase.assertEquals;
-import static junit.framework.TestCase.assertTrue;
-import static junit.framework.TestCase.fail;
+import static junit.framework.TestCase.*;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
 @Category(IntegrationTest.class)
@@ -375,4 +378,66 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     cleanupQuery(res);
   }
 
+
+  @Test
+  public final void testBroadcastSubquery3() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+
+    Collection<SubQuery> subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
+    Iterator iterator = subQueries.iterator();
+
+    boolean scheduled = false, partitionShuffle = false;
+    while (iterator.hasNext()) {
+      SubQuery subQuery = (SubQuery)iterator.next();
+      if (subQuery.getTotalScheduledObjectsCount() == 11) {
+        scheduled = true;
+      }
+      if (subQuery.getDataChannel().getShuffleType() == PARTITION_SHUFFLE) {
+        partitionShuffle = true;
+      }
+    }
+    assertFalse(scheduled);
+    assertFalse(partitionShuffle);
+
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_MB.varname
+        , "10");
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_PER_VOLUME
+        .varname, "2");
+    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SHUFFLE_TASK_NUM_VOLUME
+        .varname, "50");
+
+    res = executeQuery();
+    assertResultSet(res);
+
+    subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
+    iterator = subQueries.iterator();
+
+    scheduled = false;
+    while (iterator.hasNext()) {
+      SubQuery subQuery = (SubQuery)iterator.next();
+      if (subQuery.getTotalScheduledObjectsCount() == 11)  {
+        scheduled = true;
+      }
+      if (subQuery.getDataChannel().getShuffleType() == PARTITION_SHUFFLE) {
+        partitionShuffle = true;
+      }
+    }
+    assertFalse(scheduled);
+    assertFalse(partitionShuffle);
+
+    cleanupQuery(res);
+  }
+
+  private Collection<SubQuery> getSubQueries(QueryId queryId) {
+    for (TajoWorker eachWorker: testingCluster.getTajoWorkers()) {
+      QueryMasterTask queryMasterTask = eachWorker.getWorkerContext().getQueryMaster().getQueryMasterTask(queryId, true);
+      if (queryMasterTask != null) {
+        return queryMasterTask.getQuery().getSubQueries();
+      }
+    }
+
+    fail("Can't find query from workers" + queryId);
+    return null;
+  }
 }

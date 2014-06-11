@@ -421,8 +421,8 @@ public class TajoPullServerService extends AbstractService {
           chunks.add(chunk);
         }
 
-        // if a subquery requires a hash shuffle
-      } else if (shuffleType.equals("h")) {
+        // if a subquery requires a hash shuffle or a shuffe for partitioned table
+      } else if (shuffleType.equals("h") || shuffleType.equals("p")) {
         for (String ta : taskIds) {
           Path path = localFS.makeQualified(
               lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" +
