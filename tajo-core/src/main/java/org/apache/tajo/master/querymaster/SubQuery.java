@@ -535,9 +535,20 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         inputStatsList.add(unit.getLastAttempt().getInputStats());
       }
     }
-    TableStats inputStats = StatisticsUtil.aggregateTableStat(inputStatsList);
-    TableStats resultStats = StatisticsUtil.aggregateTableStat(resultStatsList);
-    return new TableStats[]{inputStats, resultStats};
+    try {
+      TableStats inputStats = StatisticsUtil.aggregateTableStat(inputStatsList);
+      TableStats resultStats = StatisticsUtil.aggregateTableStat(resultStatsList);
+      return new TableStats[]{inputStats, resultStats};
+    } catch (Exception e) {
+      LOG.error("==========================", e);
+      for (TableStats input: inputStatsList) {
+        LOG.error("InputStats:" + input);
+      }
+      for (TableStats result: resultStatsList) {
+        LOG.error("ResultStats:" + result);
+      }
+      return null;
+    }
   }
 
   private void stopScheduler() {
@@ -722,7 +733,7 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       }
 
       // Is this subquery the first step of join?
-      if (parent != null && parent.getScanNodes().length == 2) {
+      if (parent != null && parent.getScanNodes().length >= 2) {
         List<ExecutionBlock> childs = masterPlan.getChilds(parent);
 
         // for outer
