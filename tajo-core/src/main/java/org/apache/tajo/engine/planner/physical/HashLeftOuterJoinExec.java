@@ -170,7 +170,6 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
       for (int i = 0; i < rightKeyList.length; i++) {
         keyTuple.put(i, tuple.get(rightKeyList[i]));
       }
-
       List<Tuple> newValue = tupleSlots.get(keyTuple);
       if (newValue != null) {
         newValue.add(tuple);

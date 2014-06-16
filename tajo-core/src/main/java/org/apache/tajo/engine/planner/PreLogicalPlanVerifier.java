@@ -258,7 +258,7 @@ public class PreLogicalPlanVerifier extends BaseAlgebraVisitor <PreLogicalPlanVe
             int columnSize = table.getSchema().getColumns().size();
             columnSize += table.getPartitionMethod().getExpressionSchema().getColumns().size();
             if (projectColumnNum < columnSize) {
-              context.state.addVerification("INSERT has smaller expressions than target columns");
+              context.state.addVerification("INSERT has smaller expressions(" + projectColumnNum + ") than target columns(" + columnSize + ")");
             }
           }
         }
