@@ -19,6 +19,8 @@
 package org.apache.tajo.engine.planner.physical;
 
 import com.google.common.collect.Lists;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.engine.planner.PlannerUtil;
@@ -36,6 +38,7 @@ import java.util.List;
  * A Scanner that reads multiple partitions
  */
 public class PartitionMergeScanExec extends PhysicalExec {
+  private final static Log LOG = LogFactory.getLog(PartitionMergeScanExec.class);
   private final ScanNode plan;
   private SeqScanExec currentScanner = null;
 

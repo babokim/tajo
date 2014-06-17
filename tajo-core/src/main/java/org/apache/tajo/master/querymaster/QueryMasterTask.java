@@ -184,6 +184,8 @@ public class QueryMasterTask extends CompositeService {
       return;
     }
 
+    super.stop();
+
     LOG.info("Stopping QueryMasterTask:" + queryId);
 
     CallFuture future = new CallFuture();
@@ -207,7 +209,11 @@ public class QueryMasterTask extends CompositeService {
       LOG.warn(t);
     }
 
-    super.stop();
+    try{
+      resourceAllocator.stop();
+    } catch (Throwable t){
+      LOG.error(t.getMessage(), t);
+    }
 
     //TODO change report to tajo master
     if (queryMetrics != null) {

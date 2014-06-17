@@ -51,6 +51,7 @@ import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
 import static org.junit.Assert.*;
 import static org.junit.Assert.assertEquals;
 
+
 public class TestTablePartitions extends QueryTestCaseBase {
 
 

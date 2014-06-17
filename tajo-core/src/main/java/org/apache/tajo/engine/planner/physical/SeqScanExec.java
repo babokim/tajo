@@ -84,7 +84,7 @@ public class SeqScanExec extends PhysicalExec {
         for (FragmentProto f : fragments) {
           FileFragment fileFragement = (FileFragment) FragmentConvertor.convert(
               context.getConf(), plan.getTableDesc().getMeta().getStoreType(), f);
-          pathNameKey += fileFragement.getPath().getParent().getName();
+          pathNameKey += fileFragement.getPath().toString();
         }
       }
 
@@ -107,6 +107,7 @@ public class SeqScanExec extends PhysicalExec {
     Schema columnPartitionSchema = SchemaUtil.clone(partitionDesc.getExpressionSchema());
     String qualifier = inSchema.getColumn(0).getQualifier();
     columnPartitionSchema.setQualifier(qualifier);
+
     // Remove partition key columns from an input schema.
     this.inSchema = plan.getTableDesc().getSchema();
 
@@ -200,6 +201,7 @@ public class SeqScanExec extends PhysicalExec {
 
   private void initScanner(Schema projected) throws IOException {
     this.projector = new Projector(inSchema, outSchema, plan.getTargets());
+
     if (fragments != null) {
       if (fragments.length > 1) {
         this.scanner = new MergeScanner(context.getConf(), plan.getPhysicalSchema(), plan.getTableDesc().getMeta(),

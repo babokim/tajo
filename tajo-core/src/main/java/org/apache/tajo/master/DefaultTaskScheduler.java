@@ -139,6 +139,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
     // Return all of request callbacks instantly.
     for (TaskRequestEvent req : taskRequests.taskRequestQueue) {
       req.getCallback().run(stopTaskRunnerReq);
+      context.getMasterContext().getResourceAllocator().releaseContainer(req.getContainerId());
     }
 
     LOG.info("Task Scheduler stopped");
@@ -245,7 +246,6 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
 
   @Override
   public void handleTaskRequestEvent(TaskRequestEvent event) {
-
     taskRequests.handle(event);
     int hosts = scheduledRequests.leafTaskHostMapping.size();
 
@@ -275,6 +275,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
 
       if(stopEventHandling.get()) {
         event.getCallback().run(stopTaskRunnerReq);
+        context.getMasterContext().getResourceAllocator().releaseContainer(event.getContainerId());
         return;
       }
       int qSize = taskRequestQueue.size();
@@ -741,6 +742,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
             .getContainer(taskRequest.getContainerId());
         if(container == null) {
           taskRequest.getCallback().run(stopTaskRunnerReq);
+          context.getMasterContext().getResourceAllocator().releaseContainer(taskRequest.getContainerId());
           continue;
         }
 
@@ -786,7 +788,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
               //release container
               hostVolumeMapping.decreaseConcurrency(containerId);
               taskRequest.getCallback().run(stopTaskRunnerReq);
-              subQuery.releaseContainer(containerId);
+              context.getMasterContext().getResourceAllocator().releaseContainer(containerId);
               continue;
             }
           }

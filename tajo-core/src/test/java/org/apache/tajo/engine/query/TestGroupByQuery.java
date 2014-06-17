@@ -36,7 +36,7 @@ import static org.junit.Assert.assertEquals;
 @Category(IntegrationTest.class)
 public class TestGroupByQuery extends QueryTestCaseBase {
 
-  public TestGroupByQuery() {
+  public TestGroupByQuery() throws Exception {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
   }
 
@@ -286,8 +286,6 @@ public class TestGroupByQuery extends QueryTestCaseBase {
         "2,3,2.0,0,3,6,7,0,8,21\n";
 
     assertEquals(expected, result);
-
-    executeString("DROP TABLE table10 PURGE").close();
   }
 
   @Test
@@ -417,11 +415,35 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   }
 
   @Test
- public final void testGroupByWithNullData9() throws Exception {
-   ResultSet res = executeQuery();
-   assertResultSet(res);
-   cleanupQuery(res);
+  public final void testGroupByWithNullData9() throws Exception {
+    executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
+    assertTableExists("table1");
 
-   executeString("DROP TABLE table1");
- }
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+
+    executeString("DROP TABLE table1");
+  }
+
+  @Test
+  public final void testGroupByWithNullData10() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testGroupByWithNullData11() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testGroupByWithNullData12() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
 }

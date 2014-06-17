@@ -754,6 +754,33 @@ public class TestJoinQuery extends QueryTestCaseBase {
   }
 
   @Test
+  public final void testLeftOuterJoinPredicationCaseByCase7() throws Exception {
+    // https://cwiki.apache.org/confluence/display/Hive/OuterJoinBehavior
+    // Case W2: Where Predicate on Null Supplying Table
+    //createOuterJoinTestTable();
+    try {
+      ResultSet res = executeString(
+          "select * \n" +
+              "from lineitem a\n" +
+              "left outer join orders b\n" +
+              "on a.l_orderkey = b.o_orderkey and o_orderdate >= '1996'\n" +
+              " where o_orderpriority = '5-LOW'"
+      );
+
+      String expected =
+          "id,name,id,id\n" +
+              "-------------------------------\n" +
+              "3,table11-3,null,3\n";
+
+      String result = resultSetToString(res);
+
+      assertEquals(expected, result);
+    } finally {
+      //dropOuterJoinTestTable();
+    }
+  }
+
+  @Test
   public final void testRightOuterJoinPredicationCaseByCase1() throws Exception {
     createOuterJoinTestTable();
     try {

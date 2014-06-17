@@ -372,6 +372,7 @@ public class Query implements EventHandler<QueryEvent> {
       }
       query.eventHandler.handle(new QueryMasterQueryCompletedEvent(query.getId()));
       query.setFinishTime();
+
       return finalState;
     }
 

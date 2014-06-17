@@ -50,7 +50,6 @@ public class SortAggregateExec extends AggregationExec {
 
   public SortAggregateExec(TaskAttemptContext context, GroupbyNode plan, PhysicalExec child) throws IOException {
     super(context, plan, child);
-
     contexts = new FunctionContext[plan.getAggFunctions() == null ? 0 : plan.getAggFunctions().length];
   }
 
@@ -73,13 +72,21 @@ public class SortAggregateExec extends AggregationExec {
         if (lastKey == null) {
           for(int i = 0; i < aggFunctionsNum; i++) {
             contexts[i] = aggFunctions[i].newContext();
-            aggFunctions[i].merge(contexts[i], inSchema, tuple);
 
-            // Find NullDatum in a tuple
-            if (groupingKeyNum == 0 && aggFunctionsNum == tuple.size()
-                && tuple.get(i) == NullDatum.get()) {
-              nullCount++;
+            // Merge when aggregator doesn't receive NullDatum
+            if (!(groupingKeyNum == 0 && aggFunctionsNum == tuple.size()
+                && tuple.get(i) == NullDatum.get())) {
+              aggFunctions[i].merge(contexts[i], inSchema, tuple);
             }
+
+            //KHJ 2014-06-17 (Merge->Local)
+//            aggFunctions[i].merge(contexts[i], inSchema, tuple);
+//
+//            // Find NullDatum in a tuple
+//            if (groupingKeyNum == 0 && aggFunctionsNum == tuple.size()
+//                && tuple.get(i) == NullDatum.get()) {
+//              nullCount++;
+//            }
           }
           lastKey = currentKey;
         } else {

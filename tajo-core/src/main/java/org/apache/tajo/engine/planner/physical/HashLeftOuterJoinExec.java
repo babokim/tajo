@@ -157,7 +157,6 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
         return outTuple;
       }
     }
-
     return outTuple;
   }
 

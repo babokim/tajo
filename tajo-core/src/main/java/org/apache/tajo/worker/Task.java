@@ -27,6 +27,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hadoop.yarn.api.records.impl.pb.ContainerIdPBImpl;
 import org.apache.tajo.QueryUnitAttemptId;
 import org.apache.tajo.TajoConstants;
 import org.apache.tajo.TajoProtos;
@@ -39,6 +40,7 @@ import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.json.CoreGsonHelper;
 import org.apache.tajo.engine.planner.PlannerUtil;
+import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.planner.physical.PhysicalExec;
 import org.apache.tajo.engine.query.QueryContext;
@@ -346,7 +348,7 @@ public class Task {
   private TaskCompletionReport getTaskCompletionReport() {
     TaskCompletionReport.Builder builder = TaskCompletionReport.newBuilder();
     builder.setId(context.getTaskId().getProto());
-
+    builder.setContainerId(((ContainerIdPBImpl)taskRunnerContext.getContainerId()).getProto());
     builder.setInputStats(reloadInputStats());
 
     if (context.hasResultStats()) {
@@ -404,6 +406,7 @@ public class Task {
         context.setFetcherProgress(FETCHER_PROGRESS);
         context.setProgress(FETCHER_PROGRESS);
       }
+
       this.executor = taskRunnerContext.getTQueryEngine().
           createPlan(context, plan);
       this.executor.init();
@@ -474,7 +477,7 @@ public class Task {
       finishTime = System.currentTimeMillis();
       LOG.info("Worker's task counter - total:" + taskRunnerContext.completedTasksNum.intValue() +
           ", succeeded: " + taskRunnerContext.succeededTasksNum.intValue()
-          + ", killed: " + taskRunnerContext.killedTasksNum.incrementAndGet()
+          + ", killed: " + taskRunnerContext.killedTasksNum.intValue()
           + ", failed: " + taskRunnerContext.failedTasksNum.intValue());
       cleanupTask();
     }
