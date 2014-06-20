@@ -20,6 +20,8 @@ package org.apache.tajo.engine.planner;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.algebra.*;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
@@ -59,6 +61,7 @@ import static org.apache.tajo.engine.planner.logical.WindowSpec.WindowStartBound
  * it returns an EvalNode.
  */
 public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, EvalNode> {
+  private final static Log LOG = LogFactory.getLog(ExprAnnotator.class);
   private CatalogService catalog;
 
   public ExprAnnotator(CatalogService catalog) {

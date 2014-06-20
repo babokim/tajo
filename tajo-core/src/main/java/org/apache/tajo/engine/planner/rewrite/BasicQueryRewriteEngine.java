@@ -65,10 +65,10 @@ public class BasicQueryRewriteEngine implements QueryRewriteEngine {
           LOG.debug("The rule \"" + rule.getName() + " \" rewrites the query.");
           LOG.debug(plan);
         }
-        LOG.info("=========================================================");
-        LOG.info("The rule \"" + rule.getName() + " \" rewrites the query.");
-        LOG.info(plan);
-        LOG.info("=========================================================");
+//        LOG.info("=========================================================");
+//        LOG.info("The rule \"" + rule.getName() + " \" rewrites the query.");
+//        LOG.info(plan);
+//        LOG.info("=========================================================");
       }
     }
 
