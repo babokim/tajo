@@ -82,7 +82,7 @@ public class SeqScanExec extends PhysicalExec {
       String pathNameKey = "";
       if (fragments != null) {
         for (FragmentProto f : fragments) {
-          FileFragment fileFragement = (FileFragment) FragmentConvertor.convert(
+          FileFragment fileFragement = FragmentConvertor.convert(
               context.getConf(), plan.getTableDesc().getMeta().getStoreType(), f);
           pathNameKey += fileFragement.getPath().toString();
         }
@@ -201,7 +201,6 @@ public class SeqScanExec extends PhysicalExec {
 
   private void initScanner(Schema projected) throws IOException {
     this.projector = new Projector(inSchema, outSchema, plan.getTargets());
-
     if (fragments != null) {
       if (fragments.length > 1) {
         this.scanner = new MergeScanner(context.getConf(), plan.getPhysicalSchema(), plan.getTableDesc().getMeta(),
@@ -238,8 +237,10 @@ public class SeqScanExec extends PhysicalExec {
       }
     }
 
-    scanner.close();
-    scanner = null;
+    if (scanner != null) {
+      scanner.close();
+      scanner = null;
+    }
 
     TupleCache.getInstance().addBroadcastCache(cacheKey, broadcastTupleCacheList);
   }

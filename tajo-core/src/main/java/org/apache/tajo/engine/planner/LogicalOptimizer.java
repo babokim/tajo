@@ -102,7 +102,6 @@ public class LogicalOptimizer {
     } else {
       LOG.info("Skip Join Optimized.");
     }
-
     rulesAfterToJoinOpt.rewrite(plan);
     return plan.getRootBlock().getRoot();
   }
@@ -134,7 +133,6 @@ public class LogicalOptimizer {
       } else {
         newJoinNode.setTargets(targets.toArray(new Target[targets.size()]));
       }
-
       PlannerUtil.replaceNode(plan, block.getRoot(), old, newJoinNode);
       // End of replacement logic
 
