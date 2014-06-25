@@ -54,11 +54,15 @@ public class ProjectionPushDownRule extends
   public boolean isEligible(LogicalPlan plan) {
     LogicalNode toBeOptimized = plan.getRootBlock().getRoot();
 
-    if (PlannerUtil.checkIfDDLPlan(toBeOptimized) || !plan.getRootBlock().hasTableExpression()) {
+    if (PlannerUtil.checkIfDDLPlan(toBeOptimized)) {
       return false;
     }
-
-    return true;
+    for (LogicalPlan.QueryBlock eachBlock: plan.getQueryBlocks()) {
+      if (eachBlock.hasTableExpression()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override
