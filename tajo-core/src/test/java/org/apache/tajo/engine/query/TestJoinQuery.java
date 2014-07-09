@@ -34,8 +34,10 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
 import java.sql.ResultSet;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 
@@ -87,9 +89,9 @@ public class TestJoinQuery extends QueryTestCaseBase {
   public static Collection<Object[]> generateParameters() {
     return Arrays.asList(new Object[][]{
         {"Hash_NoBroadcast"},
-        {"Sort_NoBroadcast"},
-        {"Hash"},
-        {"Sort"},
+//        {"Sort_NoBroadcast"},
+//        {"Hash"},
+//        {"Sort"},
     });
   }
 
@@ -521,9 +523,9 @@ public class TestJoinQuery extends QueryTestCaseBase {
     assertResultSet(res);
     cleanupQuery(res);
 
-    executeString("DROP TABLE JOINS.part_ PURGE");
-    executeString("DROP TABLE JOINS.supplier_ PURGE");
-    executeString("DROP DATABASE JOINS");
+//    executeString("DROP TABLE JOINS.part_ PURGE");
+//    executeString("DROP TABLE JOINS.supplier_ PURGE");
+//    executeString("DROP DATABASE JOINS");
   }
 
   @Test
@@ -754,33 +756,6 @@ public class TestJoinQuery extends QueryTestCaseBase {
   }
 
   @Test
-  public final void testLeftOuterJoinPredicationCaseByCase7() throws Exception {
-    // https://cwiki.apache.org/confluence/display/Hive/OuterJoinBehavior
-    // Case W2: Where Predicate on Null Supplying Table
-    //createOuterJoinTestTable();
-    try {
-      ResultSet res = executeString(
-          "select * \n" +
-              "from lineitem a\n" +
-              "left outer join orders b\n" +
-              "on a.l_orderkey = b.o_orderkey and o_orderdate >= '1996'\n" +
-              " where o_orderpriority = '5-LOW'"
-      );
-
-      String expected =
-          "id,name,id,id\n" +
-              "-------------------------------\n" +
-              "3,table11-3,null,3\n";
-
-      String result = resultSetToString(res);
-
-      assertEquals(expected, result);
-    } finally {
-      //dropOuterJoinTestTable();
-    }
-  }
-
-  @Test
   public final void testRightOuterJoinPredicationCaseByCase1() throws Exception {
     createOuterJoinTestTable();
     try {
@@ -932,5 +907,199 @@ public class TestJoinQuery extends QueryTestCaseBase {
     executeString("DROP TABLE table12 PURGE;");
     executeString("DROP TABLE table13 PURGE;");
     executeString("DROP TABLE table14 PURGE;");
+  }
+
+  @Test
+  public void testJoinWithEmptyData() throws Exception {
+    ResultSet res = executeString(
+        "select a.l_orderkey from (select * from lineitem where l_orderkey > 100) a \n" +
+            "full outer join (select * from lineitem where l_orderkey > 100) b \n" +
+            "on a.l_orderkey = b.l_orderkey"
+    );
+
+    String expected = "l_orderkey\n" +
+        "-------------------------------\n";
+    assertEquals(expected, resultSetToString(res));
+  }
+
+  @Test
+  public void testAAA() throws Exception {
+    executeString(
+        "CREATE TABLE tm_s_sdp_skt_daily_tm_app_rpts " +
+            "(app_grp_dtl_cd TEXT, seg_grp_dtl_cd TEXT, eqp_net_cl_cd TEXT, app_use_svc_cnt INT8, " +
+            "app_use_svc_cnt_rnk INT4, app_use_svc_cnt_icdc_pct FLOAT4, app_use_svc_cnt_imprt_rt FLOAT4, " +
+            "app_use_svc_cnt_tot_rnk INT4, avg_app_use_qty FLOAT8, avg_app_use_qty_rnk INT4, " +
+            "avg_app_use_qty_icdc_pct FLOAT4, avg_app_use_qty_imprt_rt FLOAT4, " +
+            "avg_app_use_qty_tot_rnk INT4, avg_app_use_tms FLOAT8, avg_app_use_tms_rnk INT4, " +
+            "avg_app_use_tms_icdc_pct FLOAT4, avg_app_use_tms_imprt_rt FLOAT4, avg_app_use_tms_tot_rnk INT4, " +
+            "avg_app_use_cnt FLOAT8, avg_app_use_cnt_rnk INT4, avg_app_use_cnt_icdc_pct FLOAT4, " +
+            "avg_app_use_cnt_imprt_rt FLOAT4, avg_app_use_cnt_tot_rnk INT4, avg_app_use_dcnt FLOAT8, " +
+            "avg_app_use_dcnt_rnk INT4, avg_app_use_dcnt_icdc_pct FLOAT4, avg_app_use_dcnt_imprt_rt FLOAT4, " +
+            "avg_app_use_dcnt_tot_rnk INT4, app_grp_cnt INT4, oper_dt_hms TEXT) " +
+            "PARTITION BY COLUMN(strd_ym TEXT, app_grp_cd TEXT, seg_grp_cd TEXT) "
+    ).close();
+
+    ResultSet res = executeString(
+        "select a.app_grp_dtl_cd\n" +
+            "     , a.seg_grp_dtl_cd\n" +
+            "     , a.eqp_net_cl_cd\n" +
+            "  from\n" +
+            "       (select strd_ym\n" +
+            "            , eqp_net_cl_cd\n" +
+            "            , app_grp_cd\n" +
+            "            , app_grp_dtl_cd\n" +
+            "            , '10' seg_grp_cd\n" +
+            "            , seg_grp_dtl_cd\n" +
+            "         from tm_s_sdp_skt_daily_tm_app_rpts aa\n" +
+            "        where aa.strd_ym = '201404'\n" +
+            "              and aa.app_grp_cd = '33'\n" +
+            "              and aa.seg_grp_cd = '01'\n" +
+            "        and aa.seg_grp_cd = '01'\n" +
+            "       ) a\n" +
+            " left outer join tm_s_sdp_skt_daily_tm_app_rpts b\n" +
+            "  on to_char(add_months(to_date(a.strd_ym, 'yyyymm'), -1), 'yyyymm') = b.strd_ym\n" +
+            "       and a.eqp_net_cl_cd = b.eqp_net_cl_cd\n" +
+            "       and a.app_grp_cd = b.app_grp_cd\n" +
+            "       and a.app_grp_dtl_cd = b.app_grp_dtl_cd\n" +
+            "       and a.seg_grp_cd = b.seg_grp_cd\n" +
+            "       and a.seg_grp_dtl_cd = b.seg_grp_dtl_cd"
+    );
+
+    String expected = "app_grp_dtl_cd,seg_grp_dtl_cd,eqp_net_cl_cd\n" +
+        "-------------------------------\n";
+    assertEquals(expected, resultSetToString(res));
+
+    res.close();
+  }
+
+  @Test
+  public void testWindow() throws Exception {
+    executeString(
+        "CREATE TABLE tm_s_sdp_m_ctg_sum ( " +
+            "svc_mgmt_num INT8, eqp_net_cl_cd TEXT, " +
+            "app_ctg_lcl_cd TEXT, app_ctg_mcl_cd TEXT, age_cl_cd TEXT, sex_cd TEXT, prod_grp_cd TEXT, " +
+            "prod_grp_dtl_cd TEXT, arpu_amt_rng_cd TEXT, data_exhst_qty_cd TEXT, user_data_use_cnt INT8, " +
+            "user_data_upload_size INT8, user_data_download_size INT8, user_data_use_tms FLOAT8, app_use_dcnt INT8) " +
+            "PARTITION BY COLUMN(strd_ym TEXT)"
+    ).close();
+
+    executeString(
+        "CREATE TABLE tm_s_sdp_app_grp_cnt (ctg_cl_cd TEXT, app_ctg_mcl_cd TEXT, app_cnt INT4) " +
+            "PARTITION BY COLUMN(strd_ym TEXT)"
+    ).close();
+
+    ResultSet res = executeString(
+      "select x.app_ctg_mcl_cd as app_grp_dtl_cd\n" +
+          "     , seg_grp_dtl_cd\n" +
+          "     , eqp_net_cl_cd\n" +
+          "     , app_use_svc_cnt\n" +
+          "     , row_number() over(partition by strd_ym order by app_use_svc_cnt desc, app_ctg_mcl_cd asc) as app_use_svc_cnt_rnk\n" +
+          "     , 0 as app_use_svc_cnt_icdc_pct\n" +
+          "     , 100.00 as app_use_svc_cnt_imprt_rt\n" +
+          "     , 0 as app_use_svc_cnt_tot_rnk\n" +
+          "     , avg_app_use_qty\n" +
+          "     , row_number() over(partition by strd_ym order by avg_app_use_qty desc, app_ctg_mcl_cd asc ) as avg_app_use_qty_rnk\n" +
+          "     , 0 as avg_app_use_qty_icdc_pct\n" +
+          "     , 100.00 as avg_app_use_qty_imprt_rt\n" +
+          "     , 0 as avg_app_use_qty_tot_rnk\n" +
+          "     , avg_app_use_tms\n" +
+          "     , row_number() over(partition by strd_ym order by avg_app_use_tms desc, app_ctg_mcl_cd asc ) as avg_app_use_tms_rnk\n" +
+          "     , 0 as avg_app_use_tms_icdc_pct\n" +
+          "     , 100.00 as avg_app_use_tms_imprt_rt\n" +
+          "     , 0 as avg_app_use_tms_tot_rnk\n" +
+          "     , avg_app_use_cnt\n" +
+          "     , row_number() over(partition by strd_ym order by avg_app_use_cnt desc, app_ctg_mcl_cd asc ) as avg_app_use_cnt_rnk\n" +
+          "     , 0 as avg_app_use_cnt_icdc_pct\n" +
+          "     , 100.00 as avg_app_use_cnt_imprt_rt\n" +
+          "     , 0 as  avg_app_use_cnt_tot_rnk\n" +
+          "     , avg_app_use_dcnt\n" +
+          "     , row_number() over(partition by strd_ym order by avg_app_use_dcnt desc, app_ctg_mcl_cd asc ) as avg_app_use_dcnt_rnk\n" +
+          "     , 0 as avg_app_use_dcnt_icdc_pct\n" +
+          "     , 100.00 as avg_app_use_dcnt_imprt_rt\n" +
+          "     , 0 as avg_app_use_dcnt_tot_rnk\n" +
+          "     , app_grp_cnt\n" +
+          "     , to_char(current_timestamp, 'yyyymmddhh24miss') as oper_dt_hms\n" +
+          "     , strd_ym\n" +
+          "     , app_grp_cd\n" +
+          "     , seg_grp_cd\n" +
+          "  from\n" +
+          "       (select a.strd_ym\n" +
+          "            , '**' as eqp_net_cl_cd\n" +
+          "            , '11' as app_grp_cd\n" +
+          "            , a.app_ctg_mcl_cd\n" +
+          "            , '01' as seg_grp_cd\n" +
+          "            , '**' as seg_grp_dtl_cd\n" +
+          "            , count(distinct a.svc_mgmt_num) as app_use_svc_cnt\n" +
+          "\t        , sum(user_data_upload_size + user_data_download_size)::float4 / count(distinct a.svc_mgmt_num)::float4 / 1024 / 1024 as avg_app_use_qty\n" +
+          "\t        , sum(user_data_use_tms)::float4 / count(distinct a.svc_mgmt_num)::float4 / 60 as avg_app_use_tms\n" +
+          "\t        , sum(user_data_use_cnt)::float4 / count(distinct a.svc_mgmt_num)::float4 as avg_app_use_cnt\n" +
+          "\t        , sum(app_use_dcnt)::float4/count(distinct a.svc_mgmt_num)::float4 as avg_app_use_dcnt\n" +
+          "\t        , b.app_grp_cnt\n" +
+          "         from tm_s_sdp_m_ctg_sum a\n" +
+          "            ,\n" +
+          "              (select app_ctg_mcl_cd\n" +
+          "                   , app_cnt app_grp_cnt\n" +
+          "                from tm_s_sdp_app_grp_cnt\n" +
+          "               where strd_ym = '201404'\n" +
+          "                     and ctg_cl_cd = 'ALL'\n" +
+          "              ) b\n" +
+          "        where a.app_ctg_mcl_cd = b.app_ctg_mcl_cd\n" +
+          "              and a.strd_ym = '201404'\n" +
+          "        group by a.strd_ym,\n" +
+          "                a.app_ctg_mcl_cd,              \n" +
+          "                b.app_grp_cnt\n" +
+          "       ) x"
+    );
+
+    assertEquals("app_grp_dtl_cd,seg_grp_dtl_cd,eqp_net_cl_cd,app_use_svc_cnt,app_use_svc_cnt_rnk,app_use_svc_cnt_icdc_pct,app_use_svc_cnt_imprt_rt,app_use_svc_cnt_tot_rnk,avg_app_use_qty,avg_app_use_qty_rnk,avg_app_use_qty_icdc_pct,avg_app_use_qty_imprt_rt,avg_app_use_qty_tot_rnk,avg_app_use_tms,avg_app_use_tms_rnk,avg_app_use_tms_icdc_pct,avg_app_use_tms_imprt_rt,avg_app_use_tms_tot_rnk,avg_app_use_cnt,avg_app_use_cnt_rnk,avg_app_use_cnt_icdc_pct,avg_app_use_cnt_imprt_rt,avg_app_use_cnt_tot_rnk,avg_app_use_dcnt,avg_app_use_dcnt_rnk,avg_app_use_dcnt_icdc_pct,avg_app_use_dcnt_imprt_rt,avg_app_use_dcnt_tot_rnk,app_grp_cnt,oper_dt_hms,strd_ym,app_grp_cd,seg_grp_cd\n" +
+        "-------------------------------\n",
+        resultSetToString(res));
+    res.close();
+  }
+
+  @Test
+  public void testJoinWithDifferentShuffleKey() throws Exception {
+    KeyValueSet tableOptions = new KeyValueSet();
+    tableOptions.put(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
+    tableOptions.put(StorageConstants.CSVFILE_NULL, "\\\\N");
+
+    Schema schema = new Schema();
+    schema.addColumn("id", Type.INT4);
+    schema.addColumn("name", Type.TEXT);
+
+    List<String> data = new ArrayList<String>();
+
+    int bytes = 0;
+    for (int i = 0; i < 1000000; i++) {
+      String row = i + "|" + i + "name012345678901234567890123456789012345678901234567890";
+      bytes += row.getBytes().length;
+      data.add(row);
+      if (bytes > 2 * 1024 * 1024) {
+        break;
+      }
+    }
+    TajoTestingCluster.createTable("large_table", schema, tableOptions, data.toArray(new String[]{}));
+
+    int originConfValue = conf.getIntVar(ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME);
+    testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME.varname, "1");
+    ResultSet res = executeString(
+        "select count(b.id) " +
+            "from (select id, count(*) as cnt from large_table group by id) a " +
+            "left outer join (select id, count(*) as cnt from large_table where id < 200 group by id) b " +
+            "on a.id = b.id"
+    );
+
+    try {
+      String expected =
+          "?count\n" +
+              "-------------------------------\n" +
+              "200\n";
+
+      assertEquals(expected, resultSetToString(res));
+    } finally {
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME.varname, "" + originConfValue);
+      cleanupQuery(res);
+      executeString("DROP TABLE large_table PURGE").close();
+    }
   }
 }

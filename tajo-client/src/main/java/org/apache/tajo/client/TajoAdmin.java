@@ -169,36 +169,36 @@ public class TajoAdmin {
     SimpleDateFormat df = new SimpleDateFormat(DATE_FORMAT);
     int id = 1;
     for (BriefQueryInfo queryInfo : queryList) {
-        String queryId = String.format("q_%s_%04d",
-                                       queryInfo.getQueryId().getId(),
-                                       queryInfo.getQueryId().getSeq());
+      String queryId = String.format("q_%s_%04d",
+          queryInfo.getQueryId().getId(),
+          queryInfo.getQueryId().getSeq());
 
-        writer.write("Id: " + id);
-        writer.write("\n");
-        id++;
-        writer.write("Query Id: " + queryId);
-        writer.write("\n");
-        writer.write("Started Time: " + df.format(queryInfo.getStartTime()));
-        writer.write("\n");
+      writer.write("Id: " + id);
+      writer.write("\n");
+      id++;
+      writer.write("Query Id: " + queryId);
+      writer.write("\n");
+      writer.write("Started Time: " + df.format(queryInfo.getStartTime()));
+      writer.write("\n");
 
-        writer.write("Query State: " + queryInfo.getState().name());
+      writer.write("Query State: " + queryInfo.getState().name());
+      writer.write("\n");
+      long end = queryInfo.getFinishTime();
+      long start = queryInfo.getStartTime();
+      String executionTime = decimalF.format((end-start) / 1000) + " sec";
+      if (!TajoClient.isQueryRunnning(queryInfo.getState())) {
+        writer.write("Finished Time: " + df.format(queryInfo.getFinishTime()));
         writer.write("\n");
-        long end = queryInfo.getFinishTime();
-        long start = queryInfo.getStartTime();
-        String executionTime = decimalF.format((end-start) / 1000) + " sec";
-        if (!TajoClient.isQueryRunnning(queryInfo.getState())) {
-          writer.write("Finished Time: " + df.format(queryInfo.getFinishTime()));
-          writer.write("\n");
-        }
-        writer.write("Execution Time: " + executionTime);
-        writer.write("\n");
-        writer.write("Query Progress: " + queryInfo.getProgress());
-        writer.write("\n");
-        writer.write("Query Statement:");
-        writer.write("\n");
-        writer.write(queryInfo.getQuery());
-        writer.write("\n");
-        writer.write("\n");
+      }
+      writer.write("Execution Time: " + executionTime);
+      writer.write("\n");
+      writer.write("Query Progress: " + queryInfo.getProgress());
+      writer.write("\n");
+      writer.write("Query Statement:");
+      writer.write("\n");
+      writer.write(queryInfo.getQuery());
+      writer.write("\n");
+      writer.write("\n");
     }
   }
 
@@ -247,7 +247,7 @@ public class TajoAdmin {
     writer.write(line);
 
     line = String.format(fmtInfo, liveQueryMasters.size(),
-                         deadQueryMasters.size(), runningQueryMasterTasks);
+        deadQueryMasters.size(), runningQueryMasterTasks);
     writer.write(line);
     writer.write("\n");
 
@@ -259,20 +259,20 @@ public class TajoAdmin {
     } else {
       String fmtQueryMasterLine = "%1$-25s %2$-5s %3$-5s %4$-10s %5$-10s%n";
       line = String.format(fmtQueryMasterLine, "QueryMaster", "Port", "Query",
-                           "Heap", "Status");
+          "Heap", "Status");
       writer.write(line);
       line = String.format(fmtQueryMasterLine, line25, line5,
-                           line5, line10, line10);
+          line5, line10, line10);
       writer.write(line);
       for (WorkerResourceInfo queryMaster : liveQueryMasters) {
         String queryMasterHost = String.format("%s:%d",
-                                  queryMaster.getAllocatedHost(),
-                                  queryMaster.getQueryMasterPort());
+            queryMaster.getAllocatedHost(),
+            queryMaster.getQueryMasterPort());
         String heap = String.format("%d MB", queryMaster.getMaxHeap()/1024/1024);
         line = String.format(fmtQueryMasterLine, queryMasterHost,
-                             queryMaster.getClientPort(),
-                             queryMaster.getNumQueryMasterTasks(),
-                             heap, queryMaster.getWorkerStatus());
+            queryMaster.getClientPort(),
+            queryMaster.getNumQueryMasterTasks(),
+            heap, queryMaster.getWorkerStatus());
         writer.write(line);
       }
 
@@ -291,11 +291,11 @@ public class TajoAdmin {
 
       for (WorkerResourceInfo queryMaster : deadQueryMasters) {
         String queryMasterHost = String.format("%s:%d",
-                                  queryMaster.getAllocatedHost(),
-                                  queryMaster.getQueryMasterPort());
+            queryMaster.getAllocatedHost(),
+            queryMaster.getQueryMasterPort());
         line = String.format(fmtQueryMasterLine, queryMasterHost,
-                             queryMaster.getClientPort(),
-                             queryMaster.getWorkerStatus());
+            queryMaster.getClientPort(),
+            queryMaster.getWorkerStatus());
         writer.write(line);
       }
 

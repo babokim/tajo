@@ -36,6 +36,8 @@ public class TestMathFunctions extends ExprTestBase {
     testSimpleEval("select round(-5.1) as col1 ", new String[]{"-5"});
     testSimpleEval("select round(-5.5) as col1 ", new String[]{"-6"});
     testSimpleEval("select round(-5.6) as col1 ", new String[]{"-6"});
+    testSimpleEval("select round(23234234234) as col1 ", new String[]{"23234234234"});
+    testSimpleEval("select round(-23234234234) as col1 ", new String[]{"-23234234234"});
 
     Schema schema = new Schema();
     schema.addColumn("col1", FLOAT8);

@@ -153,8 +153,8 @@ public class LogicalPlanVerifier extends BasicLogicalPlanVisitor<LogicalPlanVeri
 
     for (int i = 0; i < leftColumns.length; i++) {
       if (!leftColumns[i].getDataType().equals(rightColumns[i].getDataType())) {
-        state.addVerification(type + " types " + leftColumns[i].getDataType().getType() + " and "
-            + rightColumns[i].getDataType().getType() + " cannot be matched");
+        state.addVerification(leftColumns[i].getQualifiedName() + "'s " + type + " types " + leftColumns[i].getDataType().getType() + " and "
+            + rightColumns[i].getQualifiedName() + "'s type " + rightColumns[i].getDataType().getType() + " cannot be matched");
       }
     }
   }

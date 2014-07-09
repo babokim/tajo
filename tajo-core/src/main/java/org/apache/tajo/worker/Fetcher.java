@@ -27,6 +27,10 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.handler.codec.http.*;
+import org.jboss.netty.handler.timeout.ReadTimeoutException;
+import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
+import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timer;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -57,6 +61,7 @@ public class Fetcher {
   private long fileLen;
   private int messageReceiveCount;
   private TajoProtos.FetcherState state;
+  private Timer timer;
 
   private ClientBootstrap bootstrap;
 
@@ -106,41 +111,43 @@ public class Fetcher {
   }
 
   public File get() throws IOException {
-    startTime = System.currentTimeMillis();
-    this.state = TajoProtos.FetcherState.FETCH_FETCHING;
+    try {
+      startTime = System.currentTimeMillis();
+      this.state = TajoProtos.FetcherState.FETCH_FETCHING;
 
-    ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+      ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
 
-    // Wait until the connection attempt succeeds or fails.
-    Channel channel = future.awaitUninterruptibly().getChannel();
-    if (!future.isSuccess()) {
+      // Wait until the connection attempt succeeds or fails.
+      Channel channel = future.awaitUninterruptibly().getChannel();
+      if (!future.isSuccess()) {
+        future.getChannel().close();
+        throw new IOException(future.getCause());
+      }
+
+      String query = uri.getPath()
+          + (uri.getRawQuery() != null ? "?" + uri.getRawQuery() : "");
+      // Prepare the HTTP request.
+      HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, query);
+      request.setHeader(HttpHeaders.Names.HOST, host);
+      LOG.info("Fetch started: " + uri);
+      request.setHeader(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
+      request.setHeader(HttpHeaders.Names.ACCEPT_ENCODING, HttpHeaders.Values.GZIP);
+
+      // Send the HTTP request.
+      ChannelFuture channelFuture = channel.write(request);
+
+      // Wait for the server to close the connection.
+      channel.getCloseFuture().awaitUninterruptibly();
+
+      channelFuture.addListener(ChannelFutureListener.CLOSE);
+
+      // Close the channel to exit.
       future.getChannel().close();
-      throw new IOException(future.getCause());
+      return file;
+    } finally {
+      LOG.info("Fetcher closed: " + uri + "," + state);
+      timer.stop();
     }
-
-    String query = uri.getPath()
-        + (uri.getRawQuery() != null ? "?" + uri.getRawQuery() : "");
-    // Prepare the HTTP request.
-    HttpRequest request = new DefaultHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, query);
-    request.setHeader(HttpHeaders.Names.HOST, host);
-    LOG.info("Fetch: " + uri);
-    request.setHeader(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.CLOSE);
-    request.setHeader(HttpHeaders.Names.ACCEPT_ENCODING, HttpHeaders.Values.GZIP);
-
-
-    // Send the HTTP request.
-    ChannelFuture channelFuture = channel.write(request);
-
-    // Wait for the server to close the connection.
-    channel.getCloseFuture().awaitUninterruptibly();
-
-    channelFuture.addListener(ChannelFutureListener.CLOSE);
-
-    // Close the channel to exit.
-    future.getChannel().close();
-    finishTime = System.currentTimeMillis();
-    this.state = TajoProtos.FetcherState.FETCH_FINISHED;
-    return file;
   }
 
   public URI getURI() {
@@ -227,9 +234,19 @@ public class Fetcher {
 
         if(fileLen >= length){
           IOUtils.cleanup(LOG, fc, raf);
-
+          finishTime = System.currentTimeMillis();
+          state = TajoProtos.FetcherState.FETCH_FINISHED;
         }
       }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e)
+      throws Exception {
+      if (e.getCause() instanceof ReadTimeoutException) {
+        ctx.getChannel().close();
+      }
+      LOG.error("Fetcher Error: ", e.getCause());
     }
   }
 
@@ -245,8 +262,10 @@ public class Fetcher {
     public ChannelPipeline getPipeline() throws Exception {
       ChannelPipeline pipeline = pipeline();
 
-      pipeline.addLast("codec", new HttpClientCodec());
+      timer = new HashedWheelTimer();
+      pipeline.addLast("codec", new HttpClientCodec(4096, 8192, 8192 * 8));
       pipeline.addLast("inflater", new HttpContentDecompressor());
+      pipeline.addLast("timeout", new ReadTimeoutHandler(timer, 10));
       pipeline.addLast("handler", new HttpClientHandler(file));
       return pipeline;
     }

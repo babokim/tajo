@@ -42,7 +42,7 @@ import org.apache.tajo.storage.Tuple;
     example = "> SELECT concat('abcde', '2');\n"
         + "abcde2",
     returnType = TajoDataTypes.Type.TEXT,
-    paramTypes = {@ParamTypes(paramTypes = {TajoDataTypes.Type.TEXT, TajoDataTypes.Type.TEXT})
+    paramTypes = {@ParamTypes(paramTypes = {TajoDataTypes.Type.TEXT, TajoDataTypes.Type.TEXT_ARRAY})
         }
 )
 public class Concat extends GeneralFunction {
@@ -56,13 +56,10 @@ public class Concat extends GeneralFunction {
 
   @Override
   public Datum eval(Tuple params) {
-    Datum datum = params.get(0);
+    StringBuilder result = new StringBuilder();
 
-    if(datum instanceof NullDatum) return NullDatum.get();
-
-    StringBuilder result = new StringBuilder(datum.asChars());
-
-    for(int i = 1 ; i < params.size() ; i++) {
+    int paramSize = params.size();
+    for(int i = 0 ; i < paramSize; i++) {
       Datum tmpDatum = params.get(i);
       if(tmpDatum instanceof NullDatum)
         continue;

@@ -34,7 +34,6 @@ import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.ipc.ClientProtos;
-import org.apache.tajo.ipc.TajoWorkerProtocol;
 import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.master.querymaster.QueryMasterTask;
 import org.apache.tajo.master.querymaster.SubQuery;
@@ -48,15 +47,16 @@ import java.util.Iterator;
 import java.util.Map;
 
 import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.SCATTERED_HASH_SHUFFLE;
 import static org.junit.Assert.*;
-import static org.junit.Assert.assertEquals;
 
 
 public class TestTablePartitions extends QueryTestCaseBase {
 
-
-  public TestTablePartitions() throws IOException {
+  public TestTablePartitions() throws Exception {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
+    executeDDL("create_lineitem_large_ddl.sql", "lineitem_large");
+    executeDDL("create_customer_large_ddl.sql", "customer_large");
   }
 
   @Test
@@ -72,7 +72,7 @@ public class TestTablePartitions extends QueryTestCaseBase {
         .size());
 
     res = testBase.execute(
-        "insert overwrite into " + tableName + " select l_orderkey, l_partkey, " +
+        "insert overwrite into " + tableName + " select coalesce(l_orderkey, 0), l_partkey, " +
             "l_quantity from lineitem");
     res.close();
   }
@@ -369,16 +369,16 @@ public class TestTablePartitions extends QueryTestCaseBase {
     if (!testingCluster.isHCatalogStoreRunning()) {
       assertEquals(5, desc.getStats().getNumRows().intValue());
     }
-    String expected = "N|1|1|17.0\n" +
-        "N|1|1|17.0\n" +
-        "N|1|1|36.0\n" +
-        "N|1|1|36.0\n" +
-        "N|2|2|38.0\n" +
-        "N|2|2|38.0\n" +
-        "R|3|2|45.0\n" +
-        "R|3|2|45.0\n" +
-        "R|3|3|49.0\n" +
-        "R|3|3|49.0\n";
+    String expected = "N\n" +
+        "N\n" +
+        "N\n" +
+        "N\n" +
+        "N\n" +
+        "N\n" +
+        "R\n" +
+        "R\n" +
+        "R\n" +
+        "R\n";
 
     String tableData = getTableFileContents(desc.getPath());
     assertEquals(expected, tableData);
@@ -629,7 +629,7 @@ public class TestTablePartitions extends QueryTestCaseBase {
 
   @Test
   public final void testColumnPartitionedTableWithSmallerExpressions1() throws Exception {
-    String tableName = CatalogUtil.normalizeIdentifier("testColumnPartitionedTableWithSmallerExpressions1");
+    String tableName = CatalogUtil.normalizeIdentifier("testColumnPartitionedTableWithSmallerExpressions");
     ResultSet res = executeString(
         "create table " + tableName + " (col1 int4, col2 int4, null_col int4) partition by column(key float8) ");
     res.close();
@@ -666,92 +666,6 @@ public class TestTablePartitions extends QueryTestCaseBase {
     assertResultSet(res, "case15.result");
     res.close();
   }
-
-
-  @Test
-  public final void testColumnPartitionedTableWithLargeData() throws Exception {
-    String tableName = CatalogUtil.normalizeIdentifier("testColumnPartitionedTableWithLargeData");
-
-    StringBuilder sb = new StringBuilder();
-    sb.append("create table ").append(tableName).append(" ( \n");
-    sb.append("l_orderkey INT4, \n");
-    sb.append("l_partkey INT4, \n");
-    sb.append("l_suppkey INT4, \n");
-    sb.append("l_linenumber INT4, \n");
-    sb.append("l_quantity FLOAT8, \n");
-    sb.append("l_extendedprice FLOAT8, \n");
-    sb.append("l_discount FLOAT8, \n");
-    sb.append("l_tax FLOAT8, \n");
-    sb.append("l_returnflag TEXT, \n");
-    sb.append("l_linestatus TEXT, \n");
-    sb.append("l_shipdate TEXT, \n");
-    sb.append("l_commitdate TEXT, \n");
-    sb.append("l_receiptdate TEXT, \n");
-    sb.append("l_shipinstruct TEXT, \n");
-    sb.append("l_shipmode TEXT, \n");
-    sb.append("l_comment TEXT ) \n");
-    sb.append("partition by column(part INT4) \n");
-
-    ResultSet res = executeString(sb.toString());
-    res.close();
-
-    assertTrue(catalog.existsTable(DEFAULT_DATABASE_NAME, tableName));
-
-    res = executeString("insert overwrite into " + tableName
-        + "  select *, l_linenumber as part from lineitem_large");
-    res.close();
-
-    Collection<SubQuery> subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
-    Iterator iterator = subQueries.iterator();
-
-    boolean scheduled = false, partitionShuffle = false;
-    while (iterator.hasNext()) {
-      SubQuery subQuery = (SubQuery)iterator.next();
-      if (subQuery.getTotalScheduledObjectsCount() == 13) {
-        scheduled = true;
-      }
-      if (subQuery.getDataChannel().getShuffleType() == TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE) {
-        partitionShuffle = true;
-      }
-    }
-    assertFalse(scheduled);
-    assertTrue(partitionShuffle);
-
-    TableDesc desc = catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName);
-    assertPartitionDirectoriesWithLargeData(desc);
-
-    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_MB.varname
-        , "100");
-    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SUB_QUERY_TASK_NUM_PER_VOLUME
-        .varname, "3");
-    testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.SHUFFLE_TASK_NUM_VOLUME
-        .varname, "1000");
-
-    res = executeString("insert overwrite into " + tableName
-        + "  select *, l_linenumber as part from lineitem_large");
-    res.close();
-
-    subQueries = getSubQueries(((TajoResultSet)res).getQueryId());
-    iterator = subQueries.iterator();
-
-    scheduled = false;
-    partitionShuffle = false;
-    while (iterator.hasNext()) {
-      SubQuery subQuery = (SubQuery)iterator.next();
-      if (subQuery.getTotalScheduledObjectsCount() == 13) {
-        scheduled = true;
-      }
-      if (subQuery.getDataChannel().getShuffleType() == TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE) {
-        partitionShuffle = true;
-      }
-    }
-    assertTrue(scheduled);
-    assertTrue(partitionShuffle);
-
-    desc = catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName);
-    assertPartitionDirectoriesWithLargeData(desc);
-  }
-
 
   private Collection<SubQuery> getSubQueries(QueryId queryId) {
     for (TajoWorker eachWorker: testingCluster.getTajoWorkers()) {

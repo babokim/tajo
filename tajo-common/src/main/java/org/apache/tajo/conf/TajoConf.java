@@ -226,8 +226,7 @@ public class TajoConf extends Configuration {
     SHUFFLE_SSL_ENABLED_KEY("tajo.pullserver.ssl.enabled", false),
     SHUFFLE_FILE_FORMAT("tajo.shuffle.file-format", "RAW"),
     SHUFFLE_FETCHER_PARALLEL_EXECUTION_MAX_NUM("tajo.shuffle.fetcher.parallel-execution.max-num", 2),
-    SHUFFLE_TASK_NUM_VOLUME("tajo.shuffle.task.num.volume", 128 * 1024 * 1024),
-
+    SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME("tajo.scattered.hash.shuffle.split.volume", 256 * 1024 * 1024),
 
     //////////////////////////////////
     // Storage Configuration
@@ -308,11 +307,6 @@ public class TajoConf extends Configuration {
 
     // GeoIP
     GEOIP_DATA("tajo.function.geoip-database-location", ""),
-
-    //////////////////////////////////
-    // Hive Configuration
-    //////////////////////////////////
-    HIVE_QUERY_MODE("tajo.hive.query.mode", false),
 
     //////////////////////////////////
     // Task Configuration

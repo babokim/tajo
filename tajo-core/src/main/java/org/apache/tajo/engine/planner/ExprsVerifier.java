@@ -18,9 +18,12 @@
 
 package org.apache.tajo.engine.planner;
 
+import org.apache.tajo.algebra.Relation;
 import org.apache.tajo.catalog.Column;
+import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.engine.eval.*;
 import org.apache.tajo.engine.planner.logical.LogicalNode;
+import org.apache.tajo.engine.planner.logical.RelationNode;
 
 import java.util.Set;
 import java.util.Stack;
@@ -46,8 +49,10 @@ public class ExprsVerifier extends BasicEvalNodeVisitor<VerificationState, EvalN
       throws PlanningException {
     instance.visitChild(state, expression, new Stack<EvalNode>());
     Set<Column> referredColumns = EvalTreeUtil.findUniqueColumns(expression);
+    Schema inSchema = (currentNode instanceof RelationNode) ?
+        ((RelationNode)currentNode).getTableSchema() : currentNode.getInSchema();
     for (Column referredColumn : referredColumns) {
-      if (!currentNode.getInSchema().contains(referredColumn)) {
+      if (!inSchema.contains(referredColumn)) {
         throw new PlanningException("Invalid State: " + referredColumn + " cannot be accessible at Node ("
             + currentNode.getPID() + ")");
       }

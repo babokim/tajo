@@ -21,11 +21,16 @@ package org.apache.tajo.engine.planner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.tajo.algebra.*;
 import org.apache.tajo.annotation.Nullable;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SortSpec;
+import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.common.TajoDataTypes.DataType;
 import org.apache.tajo.engine.eval.*;
@@ -35,6 +40,7 @@ import org.apache.tajo.engine.utils.SchemaUtil;
 import org.apache.tajo.storage.TupleComparator;
 import org.apache.tajo.util.TUtil;
 
+import java.io.IOException;
 import java.util.*;
 
 public class PlannerUtil {
@@ -593,7 +599,7 @@ public class PlannerUtil {
           for (int j = 0; j < schemas.length; j++) {
             // check whether the column is for either outer or inner
             // 0 is outer, and 1 is inner
-            if (schemas[j].containsByQualifiedName(column.getQualifiedName())) {
+            if (schemas[j].contains(column.getQualifiedName())) {
               pair[j] = column;
             }
           }
@@ -761,5 +767,44 @@ public class PlannerUtil {
     }
 
     return explains.toString();
+  }
+
+  public static Path getPartitionedTableFirstTerminalPath(Configuration conf, TableDesc tableDesc) throws IOException {
+    Path tablePath = tableDesc.getPath();
+
+    FileSystem fs = tablePath.getFileSystem(conf);
+    FileStatus[] files = fs.listStatus(tablePath);
+
+    if (files != null) {
+      for (FileStatus eachFile: files) {
+        if (eachFile.isFile()) {
+          if (eachFile.getLen() > 0) {
+            return eachFile.getPath();
+          }
+        } else {
+          return getPartitionedTableFirstTerminalPath(fs, eachFile.getPath());
+        }
+      }
+    }
+
+    // if not found
+    return tablePath;
+  }
+
+  public static Path getPartitionedTableFirstTerminalPath(FileSystem fs, Path path) throws IOException {
+    FileStatus[] files = fs.listStatus(path);
+
+    if (files != null) {
+      for (FileStatus eachFile: files) {
+        if (eachFile.isFile()) {
+          if (eachFile.getLen() > 0) {
+            return eachFile.getPath();
+          }
+        } else {
+          return getPartitionedTableFirstTerminalPath(fs, eachFile.getPath());
+        }
+      }
+    }
+    return path;
   }
 }

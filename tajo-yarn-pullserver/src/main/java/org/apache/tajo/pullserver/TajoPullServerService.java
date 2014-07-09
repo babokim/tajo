@@ -299,11 +299,12 @@ public class TajoPullServerService extends AbstractService {
       if (sslFactory != null) {
         pipeline.addLast("ssl", new SslHandler(sslFactory.createSSLEngine()));
       }
-      pipeline.addLast("decoder", new HttpRequestDecoder());
+
+      pipeline.addLast("codec", new HttpServerCodec(4096, 8192, 8192 * 8));
       pipeline.addLast("aggregator", new HttpChunkAggregator(1 << 16));
-      pipeline.addLast("encoder", new HttpResponseEncoder());
       pipeline.addLast("chunking", new ChunkedWriteHandler());
       pipeline.addLast("shuffle", PullServer);
+
       return pipeline;
       // TODO factor security manager into pipeline
       // TODO factor out encode/decode to permit binary shuffle
@@ -421,8 +422,8 @@ public class TajoPullServerService extends AbstractService {
           chunks.add(chunk);
         }
 
-        // if a subquery requires a hash shuffle or a shuffe for partitioned table
-      } else if (shuffleType.equals("h") || shuffleType.equals("p")) {
+        // if a subquery requires a hash shuffle or a scattered hash shuffle
+      } else if (shuffleType.equals("h") || shuffleType.equals("s")) {
         for (String ta : taskIds) {
           Path path = localFS.makeQualified(
               lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" +
@@ -530,7 +531,7 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
-      LOG.error("PullServer error: ", cause);
+      LOG.error("PullServer error isConnected : " +  ch.isConnected(), cause);
       if (ch.isConnected()) {
         LOG.error("PullServer error " + e);
         sendError(ctx, INTERNAL_SERVER_ERROR);

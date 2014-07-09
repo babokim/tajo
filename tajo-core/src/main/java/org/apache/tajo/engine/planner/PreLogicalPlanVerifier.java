@@ -20,7 +20,6 @@ package org.apache.tajo.engine.planner;
 
 import org.apache.tajo.TajoConstants;
 import org.apache.tajo.algebra.*;
-import org.apache.tajo.*;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableDesc;
@@ -227,9 +226,9 @@ public class PreLogicalPlanVerifier extends BaseAlgebraVisitor <PreLogicalPlanVe
   public Expr visitInsert(Context context, Stack<Expr> stack, Insert expr) throws PlanningException {
     Expr child = super.visitInsert(context, stack, expr);
 
-    if (!expr.isOverwrite()) {
-      context.state.addVerification("INSERT INTO statement is not supported yet.");
-    }
+//    if (!expr.isOverwrite()) {
+//      context.state.addVerification("INSERT INTO statement is not supported yet.");
+//    }
 
     if (expr.hasTableName()) {
       assertRelationExistence(context, expr.getTableName());

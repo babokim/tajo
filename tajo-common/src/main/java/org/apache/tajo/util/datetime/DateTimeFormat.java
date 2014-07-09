@@ -596,6 +596,10 @@ public class DateTimeFormat {
     //TODO consider TimeZone
     doToTimestamp(dateText, formatText, tm);
 
+    if (tm.dayOfMonth == 0) {
+      tm.dayOfMonth = 1;
+    }
+
     if (tm.dayOfYear > 0 && tm.dayOfMonth > 0) {
       tm.dayOfYear = 0;
     }

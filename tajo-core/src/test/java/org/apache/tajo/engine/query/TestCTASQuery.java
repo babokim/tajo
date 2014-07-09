@@ -82,6 +82,7 @@ public class TestCTASQuery extends QueryTestCaseBase {
       assertEquals(5, desc.getStats().getNumRows().intValue());
     }
 
+    //select distinct * from  where (key = 45.0 or key testCtasWithoutTableDefinition= 38.0);
     ResultSet res2 = executeFile("check1.sql");
 
     Map<Double, int []> resultRows1 = Maps.newHashMap();

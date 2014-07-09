@@ -52,6 +52,7 @@ import org.apache.tajo.engine.planner.logical.GroupbyNode;
 import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.engine.planner.logical.ScanNode;
 import org.apache.tajo.engine.planner.logical.StoreTableNode;
+import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.TajoMasterProtocol;
 import org.apache.tajo.master.*;
 import org.apache.tajo.master.TaskRunnerGroupEvent.EventType;
@@ -529,24 +530,61 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
   private TableStats[] computeStatFromTasks() {
     List<TableStats> inputStatsList = Lists.newArrayList();
     List<TableStats> resultStatsList = Lists.newArrayList();
+
+    int i = 0;
     for (QueryUnit unit : getQueryUnits()) {
       resultStatsList.add(unit.getStats());
       if (unit.getLastAttempt().getInputStats() != null) {
         inputStatsList.add(unit.getLastAttempt().getInputStats());
       }
+      //--------------------- DEBUG START ------------------------//
+      if (i > 0) {
+        TableStats stats1 = inputStatsList.get(i-1);
+        TableStats stats2 = unit.getLastAttempt().getInputStats();
+
+        if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
+          LOG.error("## ColumnSize mismatch ### "
+              + ", blockId:" + getId()
+              + ", shuffleType:" + getDataChannel().getShuffleType().name()
+              + ", inputStatsColumnSize:" + getInputStats().getColumnStats().size()
+              + ", resultStatColumnSize:" + getResultStats().getColumnStats().size()
+              + ", previousColumSize:" + stats1.getColumnStats().size()
+              + ", previousShuffleOutputNum:" + stats2.getNumShuffleOutputs()
+              + ", currentColumSize:" + stats1.getColumnStats().size()
+              + ", currentShuffleOutputNum:" + stats2.getNumShuffleOutputs()
+          );
+          abort(SubQueryState.FAILED);
+        } else {
+          int j = 0;
+          for(ColumnStats column1 : stats1.getColumnStats()) {
+            if (column1.getColumn().getDataType() != stats2.getColumnStats().get(j).getColumn()
+                .getDataType()) {
+              LOG.error("## ColumnType mismatch ### "
+                  + ", index:" + j
+                  + ", blockId:" + getId()
+                  + ", shuffleType:" + getDataChannel().getShuffleType().name()
+                  + ", inputStatsColumnSize:" + getInputStats().getColumnStats().size()
+                  + ", resultStatColumnSize:" + getResultStats().getColumnStats().size()
+                  + ", previousColumSize:" + stats1.getColumnStats().size()
+                  + ", previousShuffleOutputNum:" + stats2.getNumShuffleOutputs()
+                  + ", currentColumSize:" + stats1.getColumnStats().size()
+                  + ", currentShuffleOutputNum:" + stats2.getNumShuffleOutputs()
+              );
+              abort(SubQueryState.FAILED);
+            }
+            j++;
+          }
+        }
+      }
+      i++;
+      //--------------------- DEBUG END ------------------------//
     }
     try {
       TableStats inputStats = StatisticsUtil.aggregateTableStat(inputStatsList);
       TableStats resultStats = StatisticsUtil.aggregateTableStat(resultStatsList);
       return new TableStats[]{inputStats, resultStats};
     } catch (Exception e) {
-      LOG.error("==========================", e);
-      for (TableStats input: inputStatsList) {
-        LOG.error("InputStats:" + input);
-      }
-      for (TableStats result: resultStatsList) {
-        LOG.error("ResultStats:" + result);
-      }
+      LOG.error(e.getMessage(), e);
       return null;
     }
   }
@@ -752,38 +790,43 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         LOG.info(subQuery.getId() + ", Bigger Table's volume is approximately " + mb + " MB");
 
         int taskNum = (int) Math.ceil((double) mb /
-            conf.getIntVar(ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME));
+            QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME));
 
-        int totalMem = getClusterTotalMemory(subQuery);
-        LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
-        int slots = Math.max(totalMem / conf.getIntVar(ConfVars.TASK_DEFAULT_MEMORY), 1);
+//        int totalMem = getClusterTotalMemory(subQuery);
+//        LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
+//        int slots = Math.max(totalMem /  QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TASK_DEFAULT_MEMORY), 1);
+//
+//        // determine the number of task
+//        taskNum = Math.min(taskNum, slots);
 
-        // determine the number of task
-        taskNum = Math.min(taskNum, slots);
-        if (conf.getIntVar(ConfVars.TESTCASE_MIN_TASK_NUM) > 0) {
-          taskNum = conf.getIntVar(ConfVars.TESTCASE_MIN_TASK_NUM);
+        if ( QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TESTCASE_MIN_TASK_NUM) > 0) {
+          taskNum = QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TESTCASE_MIN_TASK_NUM);
           LOG.warn("!!!!! TESTCASE MODE !!!!!");
         }
-        LOG.info(subQuery.getId() + ", The determined number of join partitions is " + taskNum);
 
         // The shuffle output numbers of join may be inconsistent by execution block order.
         // Thus, we need to compare the number with DataChannel output numbers.
         // If the number is right, the number and DataChannel output numbers will be consistent.
-        int outerShuffleOutptNum = 0, innerShuffleOutputNum = 0;
+        int outerShuffleOutputNum = 0, innerShuffleOutputNum = 0;
         for (DataChannel eachChannel : masterPlan.getOutgoingChannels(outer.getId())) {
-          outerShuffleOutptNum = Math.max(outerShuffleOutptNum, eachChannel.getShuffleOutputNum());
+          outerShuffleOutputNum = Math.max(outerShuffleOutputNum, eachChannel.getShuffleOutputNum());
         }
 
         for (DataChannel eachChannel : masterPlan.getOutgoingChannels(inner.getId())) {
           innerShuffleOutputNum = Math.max(innerShuffleOutputNum, eachChannel.getShuffleOutputNum());
         }
 
-        if (outerShuffleOutptNum != innerShuffleOutputNum
-            && taskNum != outerShuffleOutptNum
+        if (outerShuffleOutputNum != innerShuffleOutputNum
+            && taskNum != outerShuffleOutputNum
             && taskNum != innerShuffleOutputNum) {
-          taskNum = Math.max(outerShuffleOutptNum, innerShuffleOutputNum);
+          taskNum = Math.max(outerShuffleOutputNum, innerShuffleOutputNum);
+          LOG.info(subQuery.getId() + ", Change determined number of join partitions cause difference of outputNum, " +
+              "taskNum=" + taskNum + ", " +
+              "outerShuffleOutptNum=" + outerShuffleOutputNum + ", " +
+              "innerShuffleOutputNum=" + innerShuffleOutputNum);
         }
 
+        LOG.info(subQuery.getId() + ", The determined number of join partitions is " + taskNum);
         return taskNum;
 
         // Is this subquery the first step of group-by?
@@ -798,12 +841,12 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
           LOG.info(subQuery.getId() + ", Table's volume is approximately " + mb + " MB");
           // determine the number of task
           int taskNumBySize = (int) Math.ceil((double) mb /
-              conf.getIntVar(ConfVars.DIST_QUERY_GROUPBY_PARTITION_VOLUME));
+              QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.DIST_QUERY_GROUPBY_PARTITION_VOLUME));
 
           int totalMem = getClusterTotalMemory(subQuery);
 
           LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
-          int slots = Math.max(totalMem / conf.getIntVar(ConfVars.TASK_DEFAULT_MEMORY), 1);
+          int slots = Math.max(totalMem / QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TASK_DEFAULT_MEMORY), 1);
           int taskNum = Math.min(taskNumBySize, slots); //Maximum partitions
           LOG.info(subQuery.getId() + ", The determined number of aggregation partitions is " + taskNum);
           return taskNum;
@@ -830,9 +873,7 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         Repartitioner.scheduleFragmentsForJoinQuery(subQuery.schedulerContext, subQuery);
       } else { // Case 3: Others (Sort or Aggregation)
         int numTasks = getNonLeafTaskNum(subQuery);
-        int partitionedTableNumTasks = getPartitionedTableTaskNum(subQuery);
-        Repartitioner.scheduleFragmentsForNonLeafTasks(subQuery.schedulerContext, masterPlan,
-            subQuery, numTasks, partitionedTableNumTasks);
+        Repartitioner.scheduleFragmentsForNonLeafTasks(subQuery.schedulerContext, masterPlan, subQuery, numTasks);
       }
     }
 
@@ -961,7 +1002,7 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         subQuery.schedulerContext.setEstimatedTaskNum(fragments.size());
       } else {
         TajoConf conf = subQuery.context.getConf();
-        subQuery.schedulerContext.setTaskSize(conf.getIntVar(ConfVars.TASK_DEFAULT_SIZE) * 1024 * 1024);
+        subQuery.schedulerContext.setTaskSize( QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TASK_DEFAULT_SIZE) * 1024 * 1024);
         int estimatedTaskNum = (int) Math.ceil((double) table.getStats().getNumBytes() /
             (double) subQuery.schedulerContext.getTaskSize());
         subQuery.schedulerContext.setEstimatedTaskNum(estimatedTaskNum);

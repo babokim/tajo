@@ -363,6 +363,17 @@ public class Task {
         Entry<Integer,String> entry = it.next();
         ShuffleFileOutput.Builder part = ShuffleFileOutput.newBuilder();
         part.setPartId(entry.getKey());
+
+        // Set output volume
+        if (context.getPartitionOutputVolume() != null) {
+          for (Entry<Integer, Long> e : context.getPartitionOutputVolume().entrySet()) {
+            if (entry.getKey().equals(e.getKey())) {
+              part.setVolume(e.getValue().longValue());
+              break;
+            }
+          }
+        }
+
         builder.addShuffleFileOutputs(part.build());
       } while (it.hasNext());
     }
@@ -596,7 +607,7 @@ public class Task {
     @Override
     public void run() {
       int retryNum = 0;
-      int maxRetryNum = 5;
+      int maxRetryNum = 30;
       int retryWaitTime = 1000;
 
       try { // for releasing fetch latch
@@ -611,7 +622,7 @@ public class Task {
           }
           try {
             File fetched = fetcher.get();
-            if (fetched != null) {
+            if (fetched != null && fetcher.getState() == TajoProtos.FetcherState.FETCH_FINISHED) {
               break;
             }
           } catch (IOException e) {
@@ -620,11 +631,15 @@ public class Task {
           retryNum++;
         }
       } finally {
-        fetcherFinished(ctx);
-      }
-
-      if (retryNum == maxRetryNum) {
-        LOG.error("ERROR: the maximum retry (" + retryNum + ") on the fetch exceeded (" + fetcher.getURI() + ")");
+        if(fetcher.getState() == TajoProtos.FetcherState.FETCH_FINISHED){
+          fetcherFinished(ctx);
+        } else {
+          if (retryNum == maxRetryNum) {
+            LOG.error("ERROR: the maximum retry (" + retryNum + ") on the fetch exceeded (" + fetcher.getURI() + ")");
+          }
+          aborted = true;
+          ctx.getFetchLatch().countDown();
+        }
       }
     }
   }

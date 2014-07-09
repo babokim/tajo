@@ -104,6 +104,7 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
     }
   }
 
+  int numReturnRows = 0;
   public Tuple next() throws IOException {
     if (first) {
       loadRightToHashTable();

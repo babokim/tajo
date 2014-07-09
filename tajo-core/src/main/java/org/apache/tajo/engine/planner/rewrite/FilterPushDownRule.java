@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.rewrite;
 
+import com.google.common.collect.BiMap;
+import com.google.common.collect.HashBiMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.apache.commons.logging.Log;
@@ -512,18 +514,18 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     List<EvalNode> notMatched = new ArrayList<EvalNode>();
 
     //copy -> origin
-    Map<EvalNode, EvalNode> matched = findCanPushdownAndTransform(
+    BiMap<EvalNode, EvalNode> transformedMap = findCanPushdownAndTransform(
         context, projectionNode, childNode, notMatched, null, false, 0);
 
-    context.setFiltersTobePushed(matched.keySet());
+    context.setFiltersTobePushed(transformedMap.keySet());
 
     stack.push(projectionNode);
-    LogicalNode current = visit(context, plan, plan.getBlock(childNode), childNode, stack);
+    childNode = visit(context, plan, plan.getBlock(childNode), childNode, stack);
     stack.pop();
 
     // find not matched after visiting child
     for (EvalNode eval: context.pushingDownFilters) {
-      notMatched.add(matched.get(eval));
+      notMatched.add(transformedMap.get(eval));
     }
 
     EvalNode qual = null;
@@ -538,22 +540,22 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     // If there is not matched node add SelectionNode and clear context.pushingDownFilters
     if (qual != null) {
       SelectionNode selectionNode = plan.createNode(SelectionNode.class);
-      selectionNode.setInSchema(current.getOutSchema());
-      selectionNode.setOutSchema(current.getOutSchema());
+      selectionNode.setInSchema(childNode.getOutSchema());
+      selectionNode.setOutSchema(childNode.getOutSchema());
       selectionNode.setQual(qual);
       block.registerNode(selectionNode);
 
       projectionNode.setChild(selectionNode);
-      selectionNode.setChild(current);
+      selectionNode.setChild(childNode);
     }
 
     //notify all eval matched to upper
     context.pushingDownFilters.clear();
 
-    return current;
+    return projectionNode;
   }
 
-  private Map<EvalNode, EvalNode> findCanPushdownAndTransform(
+  private BiMap<EvalNode, EvalNode> findCanPushdownAndTransform(
       FilterPushDownContext context, Projectable node,
       LogicalNode childNode, List<EvalNode> notMatched,
       Set<String> partitionColumns,
@@ -565,7 +567,7 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     }
 
     // copy -> origin
-    Map<EvalNode, EvalNode> matched = new HashMap<EvalNode, EvalNode>();
+    BiMap<EvalNode, EvalNode> matched = HashBiMap.create();
 
     for (EvalNode eval : context.pushingDownFilters) {
       if (ignoreJoin && EvalTreeUtil.isJoinQual(eval, true)) {

@@ -19,6 +19,7 @@
 package org.apache.tajo.master.querymaster;
 
 import com.google.common.collect.Lists;
+import com.google.common.primitives.Ints;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
@@ -38,6 +39,7 @@ import org.apache.tajo.engine.planner.global.ExecutionBlock;
 import org.apache.tajo.engine.planner.global.GlobalPlanner;
 import org.apache.tajo.engine.planner.global.MasterPlan;
 import org.apache.tajo.engine.planner.logical.*;
+import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.engine.utils.TupleUtil;
 import org.apache.tajo.exception.InternalException;
 import org.apache.tajo.ipc.TajoWorkerProtocol;
@@ -58,9 +60,7 @@ import java.net.URI;
 import java.util.*;
 import java.util.Map.Entry;
 
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.HASH_SHUFFLE;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.PARTITION_SHUFFLE;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.RANGE_SHUFFLE;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.*;
 
 /**
  * Repartitioner creates non-leaf tasks and shuffles intermediate data.
@@ -91,8 +91,15 @@ public class Repartitioner {
       if (tableDesc == null) { // if it is a real table stored on storage
         // TODO - to be fixed (wrong directory)
         tablePath = storageManager.getTablePath(scans[i].getTableName());
-        ExecutionBlockId scanEBId = TajoIdUtils.createExecutionBlockId(scans[i].getTableName());
-        stats[i] = masterContext.getSubQuery(scanEBId).getResultStats().getNumBytes();
+        if (execBlock.getUnionScanMap() != null && !execBlock.getUnionScanMap().isEmpty()) {
+          for (Map.Entry<ExecutionBlockId, ExecutionBlockId> unionScanEntry: execBlock.getUnionScanMap().entrySet()) {
+            ExecutionBlockId originScanEbId = unionScanEntry.getKey();
+            stats[i] += masterContext.getSubQuery(originScanEbId).getResultStats().getNumBytes();
+          }
+        } else {
+          ExecutionBlockId scanEBId = TajoIdUtils.createExecutionBlockId(scans[i].getTableName());
+          stats[i] = masterContext.getSubQuery(scanEBId).getResultStats().getNumBytes();
+        }
         fragments[i] = new FileFragment(scans[i].getCanonicalName(), tablePath, 0, 0, new String[]{UNKNOWN_HOST});
       } else {
         tablePath = tableDesc.getPath();
@@ -129,6 +136,20 @@ public class Repartitioner {
     // If node is outer join and a preserved relation is empty, it should return zero rows.
     joinNode = PlannerUtil.findTopNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
+      // all stats is zero, return
+      boolean allZero = true;
+      for (int i = 0 ; i < stats.length; i++) {
+        if (stats[i] != 0) {
+          allZero = false;
+          break;
+        }
+      }
+
+      if (allZero) {
+        LOG.info(execBlock.getId() + "'s input size is zero.");
+        return;
+      }
+
       // find left top scan node
       ScanNode leftScanNode = PlannerUtil.findTopNode(joinNode.getLeftChild(), NodeType.SCAN);
       ScanNode rightScanNode = PlannerUtil.findTopNode(joinNode.getRightChild(), NodeType.SCAN);
@@ -268,29 +289,41 @@ public class Repartitioner {
                                                        long[] stats,
                                                        FileFragment[] fragments,
                                                        FileFragment[] broadcastFragments) throws IOException {
+    MasterPlan masterPlan = subQuery.getMasterPlan();
+    ExecutionBlock execBlock = subQuery.getBlock();
     // The hash map is modeling as follows:
-    // <Part Id, <Table Name, Intermediate Data>>
-    Map<Integer, Map<String, List<IntermediateEntry>>> hashEntries = new HashMap<Integer, Map<String, List<IntermediateEntry>>>();
+    // <Part Id, <EbId, Intermediate Data>>
+    Map<Integer, Map<ExecutionBlockId, List<IntermediateEntry>>> hashEntries =
+        new HashMap<Integer, Map<ExecutionBlockId, List<IntermediateEntry>>>();
 
     // Grouping IntermediateData by a partition key and a table name
-    for (ScanNode scan : scans) {
-      SubQuery childSubQuery = masterContext.getSubQuery(TajoIdUtils.createExecutionBlockId(scan.getCanonicalName()));
-      for (QueryUnit task : childSubQuery.getQueryUnits()) {
+    List<ExecutionBlock> childBlocks = masterPlan.getChilds(subQuery.getId());
+
+    // In the case of join with union, there is one ScanNode for union.
+    Map<ExecutionBlockId, ExecutionBlockId> unionScanMap = execBlock.getUnionScanMap();
+    for (ExecutionBlock childBlock : childBlocks) {
+      ExecutionBlockId scanEbId = unionScanMap.get(childBlock.getId());
+      if (scanEbId == null) {
+        scanEbId = childBlock.getId();
+      }
+      SubQuery childExecSM = subQuery.getContext().getSubQuery(childBlock.getId());
+      for (QueryUnit task : childExecSM.getQueryUnits()) {
         if (task.getIntermediateData() != null && !task.getIntermediateData().isEmpty()) {
           for (IntermediateEntry intermEntry : task.getIntermediateData()) {
+            intermEntry.setEbId(childBlock.getId());
             if (hashEntries.containsKey(intermEntry.getPartId())) {
-              Map<String, List<IntermediateEntry>> tbNameToInterm =
+              Map<ExecutionBlockId, List<IntermediateEntry>> tbNameToInterm =
                   hashEntries.get(intermEntry.getPartId());
 
-              if (tbNameToInterm.containsKey(scan.getCanonicalName())) {
-                tbNameToInterm.get(scan.getCanonicalName()).add(intermEntry);
+              if (tbNameToInterm.containsKey(scanEbId)) {
+                tbNameToInterm.get(scanEbId).add(intermEntry);
               } else {
-                tbNameToInterm.put(scan.getCanonicalName(), TUtil.newList(intermEntry));
+                tbNameToInterm.put(scanEbId, TUtil.newList(intermEntry));
               }
             } else {
-              Map<String, List<IntermediateEntry>> tbNameToInterm =
-                  new HashMap<String, List<IntermediateEntry>>();
-              tbNameToInterm.put(scan.getCanonicalName(), TUtil.newList(intermEntry));
+              Map<ExecutionBlockId, List<IntermediateEntry>> tbNameToInterm =
+                  new HashMap<ExecutionBlockId, List<IntermediateEntry>>();
+              tbNameToInterm.put(scanEbId, TUtil.newList(intermEntry));
               hashEntries.put(intermEntry.getPartId(), tbNameToInterm);
             }
           }
@@ -298,15 +331,15 @@ public class Repartitioner {
           //if no intermidatedata(empty table), make empty entry
           int emptyPartitionId = 0;
           if (hashEntries.containsKey(emptyPartitionId)) {
-            Map<String, List<IntermediateEntry>> tbNameToInterm = hashEntries.get(emptyPartitionId);
-            if (tbNameToInterm.containsKey(scan.getCanonicalName()))
-              tbNameToInterm.get(scan.getCanonicalName())
-                  .addAll(new ArrayList<IntermediateEntry>());
+            Map<ExecutionBlockId, List<IntermediateEntry>> tbNameToInterm = hashEntries.get(emptyPartitionId);
+            if (tbNameToInterm.containsKey(scanEbId))
+              tbNameToInterm.get(scanEbId).addAll(new ArrayList<IntermediateEntry>());
             else
-              tbNameToInterm.put(scan.getCanonicalName(), new ArrayList<IntermediateEntry>());
+              tbNameToInterm.put(scanEbId, new ArrayList<IntermediateEntry>());
           } else {
-            Map<String, List<IntermediateEntry>> tbNameToInterm = new HashMap<String, List<IntermediateEntry>>();
-            tbNameToInterm.put(scan.getCanonicalName(), new ArrayList<IntermediateEntry>());
+            Map<ExecutionBlockId, List<IntermediateEntry>> tbNameToInterm =
+                new HashMap<ExecutionBlockId, List<IntermediateEntry>>();
+            tbNameToInterm.put(scanEbId, new ArrayList<IntermediateEntry>());
             hashEntries.put(emptyPartitionId, tbNameToInterm);
           }
         }
@@ -324,8 +357,9 @@ public class Repartitioner {
     // Getting the desire number of join tasks according to the volumn
     // of a larger table
     int largerIdx = stats[0] >= stats[1] ? 0 : 1;
-    int desireJoinTaskVolumn = subQuery.getContext().getConf().
-        getIntVar(ConfVars.DIST_QUERY_JOIN_TASK_VOLUME);
+    int desireJoinTaskVolumn =
+        QueryContext.getIntVar(subQuery.getContext().getQueryContext(), subQuery.getContext().getConf(),
+            ConfVars.DIST_QUERY_JOIN_TASK_VOLUME);
 
     // calculate the number of tasks according to the data size
     int mb = (int) Math.ceil((double) stats[largerIdx] / 1048576);
@@ -347,7 +381,7 @@ public class Repartitioner {
     SubQuery.scheduleFragment(subQuery, fragments[0], Arrays.asList(rightFragments));
 
     // Assign partitions to tasks in a round robin manner.
-    for (Entry<Integer, Map<String, List<IntermediateEntry>>> entry
+    for (Entry<Integer, Map<ExecutionBlockId, List<IntermediateEntry>>> entry
         : hashEntries.entrySet()) {
       addJoinShuffle(subQuery, entry.getKey(), entry.getValue());
     }
@@ -437,12 +471,12 @@ public class Repartitioner {
   }
 
   private static void addJoinShuffle(SubQuery subQuery, int partitionId,
-                                     Map<String, List<IntermediateEntry>> grouppedPartitions) {
+                                     Map<ExecutionBlockId, List<IntermediateEntry>> grouppedPartitions) {
     Map<String, List<FetchImpl>> fetches = new HashMap<String, List<FetchImpl>>();
     for (ExecutionBlock execBlock : subQuery.getMasterPlan().getChilds(subQuery.getId())) {
-      if (grouppedPartitions.containsKey(execBlock.getId().toString())) {
-        Collection<FetchImpl> requests = mergeShuffleRequest(execBlock.getId(), partitionId, HASH_SHUFFLE,
-              grouppedPartitions.get(execBlock.getId().toString()));
+      if (grouppedPartitions.containsKey(execBlock.getId())) {
+        Collection<FetchImpl> requests = mergeShuffleRequest(partitionId, HASH_SHUFFLE,
+            grouppedPartitions.get(execBlock.getId()));
         fetches.put(execBlock.getId().toString(), Lists.newArrayList(requests));
       }
     }
@@ -460,20 +494,23 @@ public class Repartitioner {
    *
    * @return key: pullserver's address, value: a list of requests
    */
-  private static Collection<FetchImpl> mergeShuffleRequest(ExecutionBlockId ebid, int partitionId,
+  private static Collection<FetchImpl> mergeShuffleRequest(int partitionId,
                                                           TajoWorkerProtocol.ShuffleType type,
                                                           List<IntermediateEntry> partitions) {
-    Map<QueryUnit.PullHost, FetchImpl> mergedPartitions = new HashMap<QueryUnit.PullHost, FetchImpl>();
+    // ebId + pullhost -> FetchImmpl
+    Map<String, FetchImpl> mergedPartitions = new HashMap<String, FetchImpl>();
 
     for (IntermediateEntry partition : partitions) {
-      QueryUnit.PullHost host = partition.getPullHost();
-      if (mergedPartitions.containsKey(host)) {
-        FetchImpl fetch = mergedPartitions.get(partition.getPullHost());
+      String mergedKey = partition.getEbId().toString() + "," + partition.getPullHost();
+
+      if (mergedPartitions.containsKey(mergedKey)) {
+        FetchImpl fetch = mergedPartitions.get(mergedKey);
         fetch.addPart(partition.getTaskId(), partition.getAttemptId());
       } else {
-        FetchImpl fetch = new FetchImpl(host, type, ebid, partitionId);
+        // In some cases like union each IntermediateEntry has different EBID.
+        FetchImpl fetch = new FetchImpl(partition.getPullHost(), type, partition.getEbId(), partitionId);
         fetch.addPart(partition.getTaskId(), partition.getAttemptId());
-        mergedPartitions.put(partition.getPullHost(), fetch);
+        mergedPartitions.put(mergedKey, fetch);
       }
     }
     return mergedPartitions.values();
@@ -481,16 +518,14 @@ public class Repartitioner {
 
   public static void scheduleFragmentsForNonLeafTasks(TaskSchedulerContext schedulerContext,
                                                       MasterPlan masterPlan, SubQuery subQuery,
-                                                      int maxNum, int partitionedTableNumTasks)
+                                                      int maxNum)
       throws IOException {
     DataChannel channel = masterPlan.getIncomingChannels(subQuery.getBlock().getId()).get(0);
-    if (channel.getShuffleType() == HASH_SHUFFLE) {
+    if (channel.getShuffleType() == HASH_SHUFFLE
+        || channel.getShuffleType() == SCATTERED_HASH_SHUFFLE) {
       scheduleHashShuffledFetches(schedulerContext, masterPlan, subQuery, channel, maxNum);
     } else if (channel.getShuffleType() == RANGE_SHUFFLE) {
       scheduleRangeShuffledFetches(schedulerContext, masterPlan, subQuery, channel, maxNum);
-    } else if (channel.getShuffleType() == PARTITION_SHUFFLE) {
-      schedulePartitionedTableShuffledFetches(schedulerContext, masterPlan, subQuery, channel,
-          partitionedTableNumTasks);
     } else {
       throw new InternalException("Cannot support partition type");
     }
@@ -627,11 +662,23 @@ public class Repartitioner {
     Map<QueryUnit.PullHost, List<IntermediateEntry>> hashedByHost;
     Map<Integer, Collection<FetchImpl>> finalFetches = new HashMap<Integer, Collection<FetchImpl>>();
 
+    Map<ExecutionBlockId, List<IntermediateEntry>> intermediates = new HashMap<ExecutionBlockId,
+        List<IntermediateEntry>>();
+
     for (ExecutionBlock block : masterPlan.getChilds(execBlock)) {
       List<IntermediateEntry> partitions = new ArrayList<IntermediateEntry>();
       for (QueryUnit tasks : subQuery.getContext().getSubQuery(block.getId()).getQueryUnits()) {
         if (tasks.getIntermediateData() != null) {
           partitions.addAll(tasks.getIntermediateData());
+
+          // In scattered hash shuffle, Collecting each IntermediateEntry
+          if (channel.getShuffleType() == SCATTERED_HASH_SHUFFLE) {
+            if (intermediates.containsKey(block.getId())) {
+              intermediates.get(block.getId()).addAll(tasks.getIntermediateData());
+            } else {
+              intermediates.put(block.getId(), tasks.getIntermediateData());
+            }
+          }
         }
       }
       Map<Integer, List<IntermediateEntry>> hashed = hashByKey(partitions);
@@ -666,107 +713,102 @@ public class Repartitioner {
       }
     }
 
-    // set the proper number of tasks to the estimated task num
-    schedulerContext.setEstimatedTaskNum(determinedTaskNum);
-    // divide fetch uris into the the proper number of tasks in a round robin manner.
-    scheduleFetchesByRoundRobin(subQuery, finalFetches, scan.getTableName(), determinedTaskNum);
-    LOG.info(subQuery.getId() + ", DeterminedTaskNum : " + determinedTaskNum);
-  }
+    // In scattered hash shuffle, Calculate another task number because determined task number may
+    // be very small. In this case, a few worker of live workers will run for shuffle and we
+    // can't use tajo  cluster resource effectively. Thus, we need to increment task number.
+    // The task number can be calculated with this formula:
+    //    NUMBER = IntermediateEntry size / SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME.
+    // For reference, SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME default value is 256MB.
+    if (channel.getShuffleType() == SCATTERED_HASH_SHUFFLE) {
+      scheduleScatteredHashShuffleFetches(schedulerContext, subQuery, intermediates,
+          scan.getTableName());
+     } else {
+      // In hash shuffle, apply fetches by round robin.
 
-  public static void schedulePartitionedTableShuffledFetches(TaskSchedulerContext
-     schedulerContext, MasterPlan masterPlan, SubQuery subQuery, DataChannel channel, int maxNum) {
-    ExecutionBlock execBlock = subQuery.getBlock();
-    TableStats totalStat = computeChildBlocksStats(subQuery.getContext(), masterPlan, subQuery.getId());
-
-    if (totalStat.getNumRows() == 0) {
-      return;
-    }
-
-    ScanNode scan = execBlock.getScanNodes()[0];
-    Path tablePath;
-    tablePath = subQuery.getContext().getStorageManager().getTablePath(scan.getTableName());
-
-    FileFragment frag = new FileFragment(scan.getCanonicalName(), tablePath, 0, 0, new String[]{UNKNOWN_HOST});
-    List<FileFragment> fragments = new ArrayList<FileFragment>();
-    fragments.add(frag);
-    SubQuery.scheduleFragments(subQuery, fragments);
-
-    Map<QueryUnit.PullHost, List<IntermediateEntry>> hashedByHost;
-    Map<Integer, Collection<FetchImpl>> finalFetches = new HashMap<Integer, Collection<FetchImpl>>();
-
-    // including all partitions
-    List<FetchImpl> totalPartitions = new ArrayList<FetchImpl>();
-    for (ExecutionBlock block : masterPlan.getChilds(execBlock)) {
-      List<IntermediateEntry> partitions = new ArrayList<IntermediateEntry>();
-      for (QueryUnit tasks : subQuery.getContext().getSubQuery(block.getId()).getQueryUnits()) {
-        if (tasks.getIntermediateData() != null) {
-          partitions.addAll(tasks.getIntermediateData());
-        }
-      }
-
-      Map<Integer, List<IntermediateEntry>> hashed = hashByKey(partitions);
-      for (Entry<Integer, List<IntermediateEntry>> interm : hashed.entrySet()) {
-        hashedByHost = hashByHost(interm.getValue());
-        for (Entry<QueryUnit.PullHost, List<IntermediateEntry>> e : hashedByHost.entrySet()) {
-          FetchImpl fetch = new FetchImpl(e.getKey(), channel.getShuffleType(),
-              block.getId(), interm.getKey(), e.getValue());
-
-          if (finalFetches.containsKey(interm.getKey())) {
-            finalFetches.get(interm.getKey()).add(fetch);
-          } else {
-            finalFetches.put(interm.getKey(), TUtil.newList(fetch));
-          }
-
-          totalPartitions.add(fetch);
-        }
-      }
-    }
-
-    // Calculate another task number because determined task number may be ver small.
-    // In this case, a few worker of live workers will run for shuffle and we can't use tajo
-    // cluster resource effectively. Thus, we need to increment task number.
-    // The task number can be calculated with this formula: NUMBER = total bytes number / 128MB
-    // For reference, 128MB is not a fixed number. We need to optimize this formula.
-    int desiredNum = (int) Math.ceil((double) totalStat.getNumBytes() /
-        subQuery.getContext().getConf().getIntVar(ConfVars.SHUFFLE_TASK_NUM_VOLUME));
-
-    GroupbyNode groupby = PlannerUtil.findMostBottomNode(subQuery.getBlock().getPlan(), NodeType.GROUP_BY);
-    // get a proper number of tasks
-    int determinedTaskNum = Math.min(maxNum, finalFetches.size());
-    LOG.info(subQuery.getId() + ", ScheduleHashShuffledFetches - Max num=" + maxNum + ", finalFetchURI=" + finalFetches.size());
-    if (groupby != null && groupby.getGroupingColumns().length == 0) {
-      determinedTaskNum = 1;
-      LOG.info(subQuery.getId() + ", No Grouping Column - determinedTaskNum is set to 1");
-    }
-
-    if (determinedTaskNum < desiredNum && desiredNum < maxNum) {
-      schedulerContext.setEstimatedTaskNum(desiredNum);
-      scheduleFetchesByInputVolume(subQuery, totalPartitions, scan.getTableName(), desiredNum);
-    } else {
-      // set the proper number of tasks to the estimated task num
+      // Step 1. set the proper number of tasks to the estimated task num
       schedulerContext.setEstimatedTaskNum(determinedTaskNum);
-      // divide fetch uris into the the proper number of tasks in a round robin manner.
+      // Step 2. divide fetch uris into the the proper number of tasks in a round robin manner.
       scheduleFetchesByRoundRobin(subQuery, finalFetches, scan.getTableName(), determinedTaskNum);
-      LOG.info(subQuery.getId() + ", DeterminedTaskNum : " + determinedTaskNum);
-    }
+      LOG.info(subQuery.getId()
+          + ", ShuffleType:" + channel.getShuffleType().name()
+          + ", DeterminedTaskNum : " + determinedTaskNum);
+     }
   }
 
-  public static void scheduleFetchesByInputVolume(SubQuery subQuery, List<FetchImpl> partitions,
-                                                  String tableName, int num) {
-    int i;
-    Map<String, List<FetchImpl>>[] fetchesArray = new Map[num];
-    for (i = 0; i < num; i++) {
-      fetchesArray[i] = new HashMap<String, List<FetchImpl>>();
+  public static void scheduleScatteredHashShuffleFetches(TaskSchedulerContext schedulerContext,
+                                                         SubQuery subQuery, Map<ExecutionBlockId, List<IntermediateEntry>> intermediates,
+                                                         String tableName) {
+    int i = 0;
+    int splitVolume =   subQuery.getContext().getConf().
+        getIntVar(ConfVars.SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME);
+
+    long sumNumBytes = 0L;
+    Map<Integer, List<FetchImpl>> fetches = new HashMap<Integer, List<FetchImpl>>();
+
+    // Step 1 : divide fetch uris into the the proper number of tasks by
+    // SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME
+    for (Entry<ExecutionBlockId, List<IntermediateEntry>> listEntry : intermediates.entrySet()) {
+
+      // Step 2: Sort IntermediateEntry by partition id. After first sort,
+      // we need to sort again by PullHost address because of data locality.
+      Collections.sort(listEntry.getValue(), new IntermediateEntryComparator());
+      for (IntermediateEntry interm : listEntry.getValue()) {
+        FetchImpl fetch = new FetchImpl(interm.getPullHost(), SCATTERED_HASH_SHUFFLE,
+            listEntry.getKey(), interm.getPartId(), TUtil.newList(interm));
+
+        if (fetches.size() == 0) {
+          fetches.put(i, TUtil.newList(fetch));
+        } else {
+
+          // Step 3: Compare current partition id with previous partition id because One task just
+          // can include one partitionId.
+          if (fetches.get(i).get(0).getPartitionId() != interm.getPartId()) {
+            i++;
+            fetches.put(i, TUtil.newList(fetch));
+            sumNumBytes = 0L;
+          } else {
+            if ((sumNumBytes + interm.getVolume()) < splitVolume) {
+              fetches.get(i).add(fetch);
+            } else {
+              i++;
+              fetches.put(i, TUtil.newList(fetch));
+              sumNumBytes = 0L;
+            }
+          }
+        }
+        sumNumBytes += interm.getVolume();
+      }
     }
+
+    // Step 4 : Set the proper number of tasks to the estimated task num
+    schedulerContext.setEstimatedTaskNum(fetches.size());
+
+    // Step 5 : Apply divided fetches
     i = 0;
+    Map<String, List<FetchImpl>>[] fetchesArray = new Map[fetches.size()];
+    for(Entry<Integer, List<FetchImpl>> entry : fetches.entrySet()) {
+      fetchesArray[i] = new HashMap<String, List<FetchImpl>>();
+      fetchesArray[i].put(tableName, entry.getValue());
 
-    for (FetchImpl entry : partitions) {
-      TUtil.putToNestedList(fetchesArray[i++], tableName, entry);
-      if (i == num) i = 0;
+      SubQuery.scheduleFetches(subQuery, fetchesArray[i]);
+      i++;
     }
 
-    for (Map<String, List<FetchImpl>> eachFetches : fetchesArray) {
-      SubQuery.scheduleFetches(subQuery, eachFetches);
+    LOG.info(subQuery.getId()
+        + ", ShuffleType:" + SCATTERED_HASH_SHUFFLE.name()
+        + ", DeterminedTaskNum : " + fetches.size());
+  }
+
+  static class IntermediateEntryComparator implements Comparator<IntermediateEntry> {
+
+    @Override
+    public int compare(IntermediateEntry o1, IntermediateEntry o2) {
+      int cmp = Ints.compare(o1.getPartId(), o2.getPartId());
+      if (cmp != 0) {
+        return cmp;
+      }
+
+      return o1.getPullHost().getHost().compareTo(o2.getPullHost().getHost());
     }
   }
 
@@ -783,8 +825,8 @@ public class Repartitioner {
       urlPrefix.append("h");
     } else if (fetch.getType() == RANGE_SHUFFLE) {
       urlPrefix.append("r").append("&").append(fetch.getRangeParams());
-    } else if (fetch.getType() == PARTITION_SHUFFLE) {
-      urlPrefix.append("p");
+    } else if (fetch.getType() == SCATTERED_HASH_SHUFFLE) {
+      urlPrefix.append("s");
     }
 
     List<URI> fetchURLs = new ArrayList<URI>();
