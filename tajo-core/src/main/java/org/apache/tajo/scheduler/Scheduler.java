@@ -36,6 +36,8 @@ public interface Scheduler {
 
   public String getName();
 
+  public int getRunningQueries(String queueName);
+
   public void addQuery(QueryInProgress resource) throws Exception;
 
   public void notifyQueryStop(QueryId queryId);

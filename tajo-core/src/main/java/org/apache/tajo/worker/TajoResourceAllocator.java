@@ -45,6 +45,7 @@ import org.apache.tajo.rpc.CallFuture;
 import org.apache.tajo.rpc.NettyClientBase;
 import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.rpc.RpcConnectionPool;
+import org.apache.tajo.rpc.protocolrecords.PrimitiveProtos;
 import org.apache.tajo.scheduler.MultiQueueFiFoScheduler;
 import org.apache.tajo.scheduler.Scheduler;
 
@@ -62,6 +63,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
   private TajoConf tajoConf;
   private QueryMasterTask.QueryMasterTaskContext queryTaskContext;
   private final ExecutorService executorService;
+  private final ExecutorService releaseService;
 
   /**
    * A key is a worker unique id, and a value is allocated worker resources.
@@ -76,7 +78,10 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
 
   public TajoResourceAllocator(QueryMasterTask.QueryMasterTaskContext queryTaskContext) {
     this.queryTaskContext = queryTaskContext;
-    executorService = Executors.newFixedThreadPool(
+    this.executorService = Executors.newFixedThreadPool(
+        queryTaskContext.getConf().getIntVar(TajoConf.ConfVars.YARN_RM_TASKRUNNER_LAUNCH_PARALLEL_NUM));
+
+    this.releaseService = Executors.newFixedThreadPool(
         queryTaskContext.getConf().getIntVar(TajoConf.ConfVars.YARN_RM_TASKRUNNER_LAUNCH_PARALLEL_NUM));
   }
 
@@ -165,7 +170,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
 
   public void stopExecutionBlock(final ExecutionBlockId executionBlockId) {
     for (final int workerId : workerInfoMap.keySet()) {
-      executorService.submit(new Runnable() {
+      releaseService.submit(new Runnable() {
         @Override
         public void run() {
           if(allocatedResourceMap.containsKey(workerId)){
@@ -194,7 +199,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
   @Override
   public void releaseWorkerResource(final ExecutionBlockId executionBlockId, final int workerId, final int resources) {
     if (allocatedResourceMap.containsKey(workerId)) {
-      executorService.submit(new Runnable() {
+      releaseService.submit(new Runnable() {
         @Override
         public void run() {
           final List<TajoMasterProtocol.AllocatedWorkerResourceProto> requestList = new ArrayList<TajoMasterProtocol.AllocatedWorkerResourceProto>();
@@ -404,6 +409,46 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     return response;
   }
 
+  private int getRunningQueries(String queueName) {
+
+    int runningSize = -1;
+    CallFuture<PrimitiveProtos.IntProto> callBack = new CallFuture<PrimitiveProtos.IntProto>();
+    RpcConnectionPool connPool = RpcConnectionPool.getPool(queryTaskContext.getConf());
+    NettyClientBase tmClient = null;
+    try {
+      tmClient = connPool.getConnection(
+          queryTaskContext.getQueryMasterContext().getWorkerContext().getTajoMasterAddress(),
+          TajoMasterProtocol.class, true);
+      TajoMasterProtocol.TajoMasterProtocolService masterClientService = tmClient.getStub();
+      masterClientService.getRunningQueries(callBack.getController(),
+          PrimitiveProtos.StringProto.newBuilder().setValue(queueName).build(),
+          callBack);
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
+      return runningSize;
+    } finally {
+      connPool.releaseConnection(tmClient);
+    }
+
+    while (!isInState(STATE.STOPPED)) {
+      try {
+        PrimitiveProtos.IntProto response = callBack.get(3, TimeUnit.SECONDS);
+        runningSize = response.getValue();
+        return runningSize;
+      } catch (InterruptedException e) {
+        if (isInState(STATE.STOPPED)) {
+          return runningSize;
+        }
+      } catch (TimeoutException e) {
+        if(callBack.getController().failed()){
+          return runningSize;
+        }
+        continue;
+      }
+    }
+    return runningSize;
+  }
+
   private List<Integer> getWorkerIds(Collection<String> hosts){
     List<Integer> workerIds = Lists.newArrayList();
     if(hosts.isEmpty()) return workerIds;
@@ -420,6 +465,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
 
   class WorkerResourceAllocator extends Thread {
     final int delay = 1000;
+    final int updateInterval = 1000;
     private AtomicBoolean stop = new AtomicBoolean(false);
     final TajoResourceAllocator allocator;
     final Map<String, MultiQueueFiFoScheduler.QueueProperty> queuePropertyMap;
@@ -430,11 +476,18 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
       AtomicBoolean isFirst = new AtomicBoolean();
       AtomicBoolean stop = new AtomicBoolean();
       ContainerAllocationEvent event;
+      long updatedTime;
+      MultiQueueFiFoScheduler.QueueProperty queueProperty;
+      int runningInQueue = 0;
       List<Integer> workerIds;
 
-      public WorkerResourceRequest(ContainerAllocationEvent event, List<Integer> workerIds) {
+      public WorkerResourceRequest(ContainerAllocationEvent event, List<Integer> workerIds,
+                                   MultiQueueFiFoScheduler.QueueProperty queueProperty) {
         this.event = event;
         this.workerIds = workerIds;
+        this.queueProperty = queueProperty;
+        this.updatedTime = System.currentTimeMillis();
+        this.runningInQueue = allocator.getRunningQueries(queueProperty.getQueueName());
       }
     }
 
@@ -470,7 +523,10 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
           workerIds = Lists.newArrayList();
         }
 
-        queue.put(new WorkerResourceRequest(event, workerIds));
+        MultiQueueFiFoScheduler.QueueProperty queueProperty =
+            queuePropertyMap.get(queryTaskContext.getSession().getVariable(Scheduler.QUERY_QUEUE_KEY, Scheduler.DEFAULT_QUEUE_NAME));
+
+        queue.put(new WorkerResourceRequest(event, workerIds, queueProperty));
       } catch (InterruptedException e) {
         if (!stop.get()) {
           LOG.warn("ContainerAllocator thread interrupted");
@@ -532,11 +588,17 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         SubQueryState state = queryTaskContext.getSubQuery(executionBlockId).getState();
 
         /* for scheduler */
-        MultiQueueFiFoScheduler.QueueProperty queueProperty =
-            queuePropertyMap.get(queryTaskContext.getSession().getVariable(Scheduler.QUERY_QUEUE_KEY, Scheduler.DEFAULT_QUEUE_NAME));
+
         int resources = request.event.getRequiredNum();
-        if (queueProperty != null && queueProperty.getMaxCapacity() > 0) {
-          resources = Math.min(request.event.getRequiredNum(), queueProperty.getMaxCapacity());
+        if (request.queueProperty != null && request.queueProperty.getMaxCapacity() > 0) {
+          int fairShares = 1;
+          if(request.updatedTime + updateInterval < System.currentTimeMillis()){
+            // update the master scheduler status
+            int runningSize = allocator.getRunningQueries(request.queueProperty.getQueueName());
+            request.runningInQueue = runningSize < 0 ? request.runningInQueue : runningSize;
+          }
+          int demandSize = (int) Math.floor(request.queueProperty.getMaxCapacity() / request.runningInQueue);
+          resources = Math.min(request.event.getRequiredNum(), demandSize);
         }
 
         try {

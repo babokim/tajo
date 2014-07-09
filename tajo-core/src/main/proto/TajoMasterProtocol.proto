@@ -146,4 +146,5 @@ service TajoMasterProtocolService {
   rpc releaseWorkerResource(WorkerResourceReleaseProto) returns (BoolProto);
   rpc stopQueryMaster(QueryIdProto) returns (BoolProto);
   rpc getAllWorkerResource(NullProto) returns (WorkerResourcesProto);
+  rpc getRunningQueries(StringProto) returns (IntProto); //parameter is queueName
 }

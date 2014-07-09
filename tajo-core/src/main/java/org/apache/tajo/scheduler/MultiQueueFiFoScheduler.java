@@ -18,6 +18,7 @@
 
 package org.apache.tajo.scheduler;
 
+import com.google.common.collect.Maps;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.QueryId;
@@ -43,7 +44,7 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
 
   // QueryId -> Queue Name
   private Map<QueryId, String> queryAssignedMap = new HashMap<QueryId, String>();
-  private Map<QueryId, QuerySchedulingInfo> runningQueries = new HashMap<QueryId, QuerySchedulingInfo>();
+  private Map<QueryId, QuerySchedulingInfo> runningQueries = Maps.newConcurrentMap();
 
   private PropertyReloader propertyReloader;
 
@@ -196,6 +197,17 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
   @Override
   public String getName() {
     return getClass().getName();
+  }
+
+  @Override
+  public int getRunningQueries(String queueName) {
+    int runningSize = 0;
+    for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
+      if(eachQuery.getAssignedQueueName().equals(queueName)){
+        runningSize++;
+      }
+    }
+    return runningSize;
   }
 
   @Override

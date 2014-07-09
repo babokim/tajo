@@ -47,6 +47,11 @@ public class SimpleFifoScheduler extends AbstractScheduler {
   }
 
   @Override
+  public int getRunningQueries(String queueName) {
+    return queryJobManager.getRunningQueries().size();
+  }
+
+  @Override
   public void notifyQueryStop(QueryId queryId) {
     synchronized (pool) {
       pool.remove(getQueryByQueryId(queryId));

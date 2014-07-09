@@ -162,5 +162,13 @@ public class TajoMasterService extends AbstractService {
       }
       done.run(builder.build());
     }
+
+    @Override
+    public void getRunningQueries(RpcController controller, PrimitiveProtos.StringProto request,
+                                     RpcCallback<PrimitiveProtos.IntProto> done) {
+
+      int runningSize = context.getQueryJobManager().getScheduler().getRunningQueries(request.getValue());
+      done.run(PrimitiveProtos.IntProto.newBuilder().setValue(runningSize).build());
+    }
   }
 }
