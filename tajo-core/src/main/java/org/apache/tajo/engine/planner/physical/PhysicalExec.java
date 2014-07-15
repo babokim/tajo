@@ -88,17 +88,17 @@ public abstract class PhysicalExec implements SchemaObject {
   protected void putProfileMetrics(String metricsName, long value) {
     if (context.isEnabledProfile()) {
       if (profileMetrics == null) {
-        profileMetrics = new QueryProfileMetrics();
+        profileMetrics = new QueryProfileMetrics(getClass().getSimpleName());
       }
       profileMetrics.addValue(metricsName, value);
     }
   }
 
   protected void closeProfile() {
-    if (profileMetrics == null) {
-      putProfileMetrics(getClass().getName() + ".next.nanoTime", nanoTimeNext);
-      putProfileMetrics(getClass().getName() + ".next", numNext);
-      putProfileMetrics(getClass().getName() + ".init.nanoTime", nanoTimeInit);
+    if (context.isEnabledProfile()) {
+      putProfileMetrics(getClass().getSimpleName() + ".next.nanoTime", nanoTimeNext);
+      putProfileMetrics(getClass().getSimpleName() + ".next", numNext);
+      putProfileMetrics(getClass().getSimpleName() + ".init.nanoTime", nanoTimeInit);
 
       QueryProfiler.addProfileMetrics(context.getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);
     }

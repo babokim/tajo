@@ -42,10 +42,10 @@ public class MemSortExec extends SortExec {
   }
 
   public void init() throws IOException {
-    context.stopWatch.reset(getClass().getName() + ".init");
+    context.stopWatch.reset(getClass().getSimpleName() + ".init");
     super.init();
     this.tupleSlots = new ArrayList<Tuple>(1000);
-    nanoTimeInit = context.stopWatch.checkNano(getClass().getName() + ".init");
+    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
   }
 
   long nanoTimeSort;
@@ -54,7 +54,7 @@ public class MemSortExec extends SortExec {
   @Override
   public Tuple next() throws IOException {
     if (!sorted) {
-      context.stopWatch.reset(getClass().getName() + ".sort");
+      context.stopWatch.reset(getClass().getSimpleName() + ".sort");
       Tuple tuple;
       while ((tuple = child.next()) != null) {
         tupleSlots.add(new VTuple(tuple));
@@ -63,14 +63,14 @@ public class MemSortExec extends SortExec {
       Collections.sort(tupleSlots, getComparator());
       this.iterator = tupleSlots.iterator();
       sorted = true;
-      nanoTimeSort = context.stopWatch.checkNano(getClass().getName() + ".sort");
+      nanoTimeSort = context.stopWatch.checkNano(getClass().getSimpleName() + ".sort");
     }
 
-    context.stopWatch.reset(getClass().getName() + ".next");
+    context.stopWatch.reset(getClass().getSimpleName() + ".next");
     if (iterator.hasNext()) {
       numNext++;
       Tuple tuple = this.iterator.next();
-      nanoTimeNext += context.stopWatch.checkNano(getClass().getName() + ".next");
+      nanoTimeNext += context.stopWatch.checkNano(getClass().getSimpleName() + ".next");
       return tuple;
     } else {
       return null;
@@ -88,7 +88,7 @@ public class MemSortExec extends SortExec {
   public void close() throws IOException {
     super.close();
     tupleSlots.clear();
-    putProfileMetrics(getClass().getName() + ".sort.nanoTime", nanoTimeSort);
+    putProfileMetrics(getClass().getSimpleName() + ".sort.nanoTime", nanoTimeSort);
     closeProfile();
     tupleSlots = null;
     iterator = null;

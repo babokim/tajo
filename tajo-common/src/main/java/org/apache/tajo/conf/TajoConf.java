@@ -344,7 +344,7 @@ public class TajoConf extends Configuration {
     // ONLY FOR TESTCASE
     TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1),
 
-    ENABLE_QUERY_PROFILE("tajo.enable.query.profile", false)
+    ENABLE_QUERY_PROFILE("tajo.enable.query.profile", true)
     ;
 
     public final String varname;

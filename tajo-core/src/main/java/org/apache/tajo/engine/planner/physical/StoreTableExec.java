@@ -20,7 +20,6 @@ package org.apache.tajo.engine.planner.physical;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableMeta;
@@ -63,6 +62,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
   }
 
   public void init() throws IOException {
+    context.stopWatch.reset(getClass().getSimpleName() + ".init");
     super.init();
 
     if (plan.hasOptions()) {
@@ -72,6 +72,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
     }
 
     openNewFile(writtenFileNum);
+    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
   }
 
   public void openNewFile(int suffixId) throws IOException {
@@ -100,7 +101,14 @@ public class StoreTableExec extends UnaryPhysicalExec {
    */
   @Override
   public Tuple next() throws IOException {
-    while((tuple = child.next()) != null) {
+    String profileKey = getClass().getSimpleName() + ".next";
+    while(true) {
+      context.stopWatch.reset(profileKey);
+      tuple = child.next();
+      if (tuple == null) {
+        break;
+      }
+      numNext++;
       appender.addTuple(tuple);
       writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
 
@@ -116,6 +124,8 @@ public class StoreTableExec extends UnaryPhysicalExec {
         openNewFile(writtenFileNum);
         writtenTupleSize = 0;
       }
+
+      nanoTimeNext = context.stopWatch.checkNano(profileKey);
     }
         
     return null;
@@ -144,6 +154,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
       }
     }
 
+    closeProfile();
     appender = null;
     plan = null;
   }

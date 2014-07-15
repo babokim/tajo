@@ -163,10 +163,13 @@ public class ExternalSortExec extends SortExec {
     int rowNum = tupleBlock.size();
 
     long sortStart = System.currentTimeMillis();
+    context.stopWatch.reset(getClass().getSimpleName() + ".memorySort");
     Collections.sort(tupleBlock, getComparator());
+    nanoTimeMemorySort += context.stopWatch.checkNano(getClass().getSimpleName() + ".memorySort");
     long sortEnd = System.currentTimeMillis();
 
     long chunkWriteStart = System.currentTimeMillis();
+    context.stopWatch.reset(getClass().getSimpleName() + ".sortWrite");
     Path outputPath = getChunkPathForWrite(0, chunkId);
     final RawFileAppender appender = new RawFileAppender(context.getConf(), inSchema, meta, outputPath);
     appender.init();
@@ -175,6 +178,7 @@ public class ExternalSortExec extends SortExec {
     }
     appender.close();
     tupleBlock.clear();
+    nanoTimeSortWrite += context.stopWatch.checkNano(getClass().getSimpleName() + ".sortWrite");
     long chunkWriteEnd = System.currentTimeMillis();
 
 
@@ -198,7 +202,14 @@ public class ExternalSortExec extends SortExec {
 
     int chunkId = 0;
     long runStartTime = System.currentTimeMillis();
-    while ((tuple = child.next()) != null) { // partition sort start
+    String profileKeyScan = getClass().getSimpleName() + ".sortScan";
+    while (true) { // partition sort start
+      context.stopWatch.reset(profileKeyScan);
+      tuple = child.next();
+      if (tuple == null) {
+        break;
+      }
+      nanoTimeSortScan += context.stopWatch.checkNano(profileKeyScan);
       Tuple vtuple = new VTuple(tuple);
       inMemoryTable.add(vtuple);
       memoryConsumption += MemoryUtil.calculateMemorySize(vtuple);
@@ -260,9 +271,14 @@ public class ExternalSortExec extends SortExec {
     return localDirAllocator.getLocalPathForWrite(sortTmpDir + "/" + level +"_" + chunkId, context.getConf());
   }
 
+  long nanoTimeSortScan;
+  long nanoTimeSortWrite;
+  long nanoTimeMemorySort;
+  long numNextMemory;
+
   @Override
   public Tuple next() throws IOException {
-
+    context.stopWatch.reset(getClass().getSimpleName() + ".next");
     if (!sorted) { // if not sorted, first sort all data
 
       // if input files are given, it starts merging directly.
@@ -299,7 +315,14 @@ public class ExternalSortExec extends SortExec {
       progress = 0.5f;
     }
 
-    return result.next();
+    Tuple tuple = result.next();
+
+    nanoTimeNext += context.stopWatch.checkNano(getClass().getSimpleName() + ".next");
+    numNext++;
+    if (memoryResident) {
+      numNextMemory++;
+    }
+    return tuple;
   }
 
   private int calculateFanout(int remainInputChunks, int intputNum, int outputNum, int startIdx) {
@@ -750,6 +773,12 @@ public class ExternalSortExec extends SortExec {
       executorService = null;
     }
 
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.SortScan", nanoTimeSortScan);
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.SortWrite", nanoTimeSortWrite);
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.MemorySort", nanoTimeMemorySort);
+    putProfileMetrics(getClass().getSimpleName() + ".numNextMemory", numNextMemory);
+
+    closeProfile();
     plan = null;
     super.close();
   }

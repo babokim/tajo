@@ -88,7 +88,7 @@ public class SeqScanExec extends PhysicalExec {
     }
 
     if (this.qual != null) {
-      evalNodeKey = this.getClass().getName() + "." + this.qual.getClass().getName();
+      evalNodeKey = this.getClass().getSimpleName() + "." + this.qual.getClass().getSimpleName();
     }
   }
 
@@ -310,7 +310,9 @@ public class SeqScanExec extends PhysicalExec {
         e.printStackTrace();
       }
     }
-    putProfileMetrics(evalNodeKey + ".nanoTime", nanoTimeEval);
+    if (evalNodeKey != null) {
+      putProfileMetrics(evalNodeKey + ".nanoTime", nanoTimeEval);
+    }
     closeProfile();
     scanner = null;
     plan = null;

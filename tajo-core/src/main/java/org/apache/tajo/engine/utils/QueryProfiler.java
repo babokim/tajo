@@ -39,10 +39,13 @@ public class QueryProfiler {
 
   public static boolean isEnabledProfile(QueryContext queryContext,
                                          TajoConf tajoConf) {
-    return QueryContext.getBoolVar(queryContext, tajoConf, ConfVars.ENABLE_QUERY_PROFILE);
+    return tajoConf.getBoolVar(ConfVars.ENABLE_QUERY_PROFILE);
   }
 
   public static void addProfileMetrics(ExecutionBlockId ebId, QueryProfileMetrics metrics) {
+    if (metrics == null) {
+      return;
+    }
     synchronized(queryIdList) {
       removeLatestValue();
 
@@ -58,8 +61,18 @@ public class QueryProfiler {
         metricsList = new ArrayList<QueryProfileMetrics>();
         ebProfileValues.put(ebId, metricsList);
       }
-
-      metricsList.add(metrics);
+      boolean alreadyExists = false;
+      for (QueryProfileMetrics eachMetrics: metricsList) {
+        if (eachMetrics.operatorName.equals(metrics.operatorName)) {
+          for (Map.Entry<String, AtomicLong> entry: metrics.metricsValues.entrySet()) {
+            eachMetrics.addValue(entry.getKey(), entry.getValue().longValue());
+          }
+          alreadyExists = true;
+        }
+      }
+      if (!alreadyExists) {
+        metricsList.add(metrics);
+      }
     }
   }
 
@@ -86,10 +99,14 @@ public class QueryProfiler {
   }
 
   public static class QueryProfileMetrics {
-    private Map<String, AtomicLong> metricsValues;
-    private Map<String, Long> minValues;
-    private Map<String, Long> maxValues;
+    private String operatorName;
+    private Map<String, AtomicLong> metricsValues = new HashMap<String, AtomicLong>();
+    private Map<String, Long> minValues = new HashMap<String, Long>();
+    private Map<String, Long> maxValues = new HashMap<String, Long>();
 
+    public QueryProfileMetrics(String operatorName) {
+      this.operatorName = operatorName;
+    }
     public void addValue(String metricsName, long metricsValue) {
       AtomicLong value = metricsValues.get(metricsName);
       if (value == null) {
@@ -108,27 +125,62 @@ public class QueryProfiler {
       }
     }
 
+    public String toInfoString() {
+      StringBuilder sb = new StringBuilder();
+      for (String eachKey: metricsValues.keySet()) {
+        sb.append("\t").append(eachKey).append(": ").append(metricsValues.get(eachKey));
+        sb.append("[").append(minValues.get(eachKey)).append(" ~ ").append(maxValues.get(eachKey)).append("]\n");
+      }
+
+      return sb.toString();
+    }
+
     public QueryProfileMetricsProto getProto() {
-      List<KeyValueProto> values = new ArrayList<KeyValueProto>();
-      for (Map.Entry<String, AtomicLong> entry: metricsValues.entrySet()) {
-        values.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue().get()).build());
-      }
+      try {
+        List<KeyValueProto> values = new ArrayList<KeyValueProto>();
+        for (Map.Entry<String, AtomicLong> entry : metricsValues.entrySet()) {
+          values.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue().get()).build());
+        }
 
-      List<KeyValueProto> mins = new ArrayList<KeyValueProto>();
-      for (Map.Entry<String, Long> entry: minValues.entrySet()) {
-        mins.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue()).build());
-      }
+        List<KeyValueProto> mins = new ArrayList<KeyValueProto>();
+        for (Map.Entry<String, Long> entry : minValues.entrySet()) {
+          mins.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue()).build());
+        }
 
-      List<KeyValueProto> maxs = new ArrayList<KeyValueProto>();
-      for (Map.Entry<String, Long> entry: maxValues.entrySet()) {
-        maxs.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue()).build());
-      }
+        List<KeyValueProto> maxs = new ArrayList<KeyValueProto>();
+        for (Map.Entry<String, Long> entry : maxValues.entrySet()) {
+          maxs.add(KeyValueProto.newBuilder().setKey(entry.getKey()).setValue("" + entry.getValue()).build());
+        }
 
-      return QueryProfileMetricsProto.newBuilder()
-          .addAllMetricsValues(values)
-          .addAllMinValues(mins)
-          .addAllMaxValues(maxs)
-          .build();
+        return QueryProfileMetricsProto.newBuilder()
+            .addAllMetricsValues(values)
+            .addAllMinValues(mins)
+            .addAllMaxValues(maxs)
+            .build();
+      } catch (Exception e) {
+        e.printStackTrace();
+        return null;
+      }
+    }
+
+    public void setMinValue(String key, long value) {
+      if (minValues.containsKey(key)) {
+        if (value < minValues.get(key)) {
+          minValues.put(key, value);
+        }
+      } else {
+        minValues.put(key, value);
+      }
+    }
+
+    public void setMaxValue(String key, long value) {
+      if (maxValues.containsKey(key)) {
+        if (value > maxValues.get(key)) {
+          maxValues.put(key, value);
+        }
+      } else {
+        maxValues.put(key, value);
+      }
     }
   }
 }

@@ -32,7 +32,10 @@ import org.apache.tajo.TajoProtos;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.global.GlobalPlanner;
 import org.apache.tajo.ipc.TajoMasterProtocol;
+import org.apache.tajo.ipc.TajoMasterProtocol.WorkerResourceProto;
 import org.apache.tajo.ipc.TajoWorkerProtocol;
+import org.apache.tajo.ipc.TajoWorkerProtocol.QueryProfileDataListProto;
+import org.apache.tajo.ipc.TajoWorkerProtocol.TajoWorkerProtocolService;
 import org.apache.tajo.master.TajoAsyncDispatcher;
 import org.apache.tajo.master.event.QueryStartEvent;
 import org.apache.tajo.rpc.CallFuture;
@@ -45,6 +48,7 @@ import org.apache.tajo.storage.StorageManagerFactory;
 import org.apache.tajo.util.NetUtils;
 import org.apache.tajo.worker.TajoWorker;
 
+import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -366,6 +370,31 @@ public class QueryMaster extends CompositeService implements EventHandler {
       builder.setQueryFinishTime(queryMasterTask.getQuery().getFinishTime());
     }
     return builder.build();
+  }
+
+  public List<QueryProfileDataListProto> getQueryProfileData(QueryId queryId) throws Exception {
+    List<QueryProfileDataListProto> result = new ArrayList<QueryProfileDataListProto>();
+    for (WorkerResourceProto workerResource: getAllWorker()) {
+      NettyClientBase rpc = null;
+      try {
+        rpc = connPool.getConnection(new InetSocketAddress(workerResource.getHost(), workerResource.getPeerRpcPort()),
+            TajoWorkerProtocol.class, true);
+        TajoWorkerProtocolService workerService = rpc.getStub();
+
+        CallFuture<QueryProfileDataListProto> callBack =
+            new CallFuture<QueryProfileDataListProto>();
+        workerService.getQueryProfileData(null, queryId.getProto(), callBack);
+
+        QueryProfileDataListProto queryProfileDataList = callBack.get(2, TimeUnit.SECONDS);
+        result.add(queryProfileDataList);
+      } catch (Exception e) {
+        LOG.error(e.getMessage(), e);
+      } finally {
+        connPool.releaseConnection(rpc);
+      }
+    }
+
+    return result;
   }
 
   private class QueryStartEventHandler implements EventHandler<QueryStartEvent> {

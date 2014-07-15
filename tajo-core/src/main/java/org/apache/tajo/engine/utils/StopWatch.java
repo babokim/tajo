@@ -44,6 +44,13 @@ public class StopWatch {
     } else {
       millis.set(System.currentTimeMillis());
     }
+
+    AtomicLong nano = currentNano.get(key);
+    if (nano == null) {
+      currentNano.put(key, new AtomicLong(System.nanoTime()));
+    } else {
+      nano.set(System.nanoTime());
+    }
   }
 
   public long checkNano(String key) {
@@ -53,11 +60,11 @@ public class StopWatch {
     long nano = System.nanoTime();
     try {
       long lastValue = currentNano.get(key).getAndSet(nano);
-      return lastValue - nano;
+      return nano - lastValue;
     } catch (Throwable t) {
       reset(key);
       long lastValue = currentNano.get(key).getAndSet(nano);
-      return lastValue - nano;
+      return nano - lastValue;
     }
   }
 
@@ -68,11 +75,11 @@ public class StopWatch {
     long millis = System.nanoTime();
     try {
       long lastValue = currentMillis.get(key).getAndSet(millis);
-      return lastValue - millis;
+      return millis - lastValue;
     } catch (Throwable t) {
       reset(key);
       long lastValue = currentMillis.get(key).getAndSet(millis);
-      return lastValue - millis;
+      return millis -lastValue;
     }
   }
 

@@ -71,7 +71,7 @@ if (query == null) {
   }
 } else {
 %>
-  <h3><%=queryId.toString()%> <a href='queryplan.jsp?queryId=<%=queryId%>'>[Query Plan]</a></h3>
+  <h3><%=queryId.toString()%> <a href='queryplan.jsp?queryId=<%=queryId%>'>[Plan]</a> <a href='queryprofile.jsp?queryId=<%=queryId%>'>[Profile]</a></h3>
   <table width="100%" border="1" class="border_table">
     <tr><th>ID</th><th>State</th><th>Started</th><th>Finished</th><th>Running time</th><th>Progress</th><th>Tasks</th></tr>
 <%

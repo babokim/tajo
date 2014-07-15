@@ -76,14 +76,14 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     storeTablePath = new Path(context.getWorkDir(), "output");
   }
 
-  String profileKey = getClass().getName() + ".next";
+  String profileKey = getClass().getSimpleName() + ".next";
   @Override
   public void init() throws IOException {
-    context.stopWatch.reset(getClass().getName() + ".init");
+    context.stopWatch.reset(getClass().getSimpleName() + ".init");
     super.init();
     FileSystem fs = new RawLocalFileSystem();
     fs.mkdirs(storeTablePath);
-    nanoTimeInit = context.stopWatch.checkNano(getClass().getName() + ".init");
+    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
   }
   
   private Appender getAppender(int partId) throws IOException {
@@ -131,7 +131,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       numNext++;
     }
 
-    context.stopWatch.reset(getClass().getName() + ".flush");
+    context.stopWatch.reset(getClass().getSimpleName() + ".flush");
     List<TableStats> statSet = new ArrayList<TableStats>();
     for (Map.Entry<Integer, Appender> entry : appenderMap.entrySet()) {
       int partNum = entry.getKey();
@@ -148,7 +148,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     TableStats aggregated = StatisticsUtil.aggregateTableStat(statSet);
     context.setResultStats(aggregated);
 
-    nanoTimeFlush += context.stopWatch.checkNano(getClass().getName() + ".flush");
+    nanoTimeFlush += context.stopWatch.checkNano(getClass().getSimpleName() + ".flush");
     return null;
   }
 
@@ -164,7 +164,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       appenderMap.clear();
       appenderMap = null;
     }
-    putProfileMetrics(getClass().getName() + ".flush.nanoTime", nanoTimeFlush);
+    putProfileMetrics(getClass().getSimpleName() + ".flush.nanoTime", nanoTimeFlush);
     closeProfile();
     partitioner = null;
     plan = null;
