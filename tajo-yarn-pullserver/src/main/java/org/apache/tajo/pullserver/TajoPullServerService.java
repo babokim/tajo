@@ -304,7 +304,9 @@ public class TajoPullServerService extends AbstractService {
         pipeline.addLast("ssl", new SslHandler(sslFactory.createSSLEngine()));
       }
 
-      pipeline.addLast("codec", new HttpServerCodec(4096, 8192, 8192 * 8));
+      int maxChunkSize = getConfig().getInt(ConfVars.SHUFFLE_FETCHER_CHUNK_MAX_SIZE.varname,
+          ConfVars.SHUFFLE_FETCHER_CHUNK_MAX_SIZE.defaultIntVal);
+      pipeline.addLast("codec", new HttpServerCodec(4096, 8192, maxChunkSize));
       pipeline.addLast("aggregator", new HttpChunkAggregator(1 << 16));
       pipeline.addLast("chunking", new ChunkedWriteHandler());
       pipeline.addLast("shuffle", PullServer);
@@ -323,11 +325,14 @@ public class TajoPullServerService extends AbstractService {
       new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
     private int port;
 
-    public PullServer(Configuration conf) {
+    public PullServer(Configuration conf) throws IOException {
       this.conf = conf;
 //      indexCache = new IndexCache(new JobConf(conf));
       this.port = conf.getInt(ConfVars.PULLSERVER_PORT.varname,
           ConfVars.PULLSERVER_PORT.defaultIntVal);
+
+      // init local temporal dir
+      lDirAlloc.getAllLocalPathsToRead(".", conf);
     }
     
     public void setPort(int port) {
@@ -406,9 +411,13 @@ public class TajoPullServerService extends AbstractService {
       // if a subquery requires a range shuffle
       if (shuffleType.equals("r")) {
         String ta = taskIds.get(0);
+        if(!lDirAlloc.ifExists(queryBaseDir + "/" + sid + "/" + ta + "/output/", conf)){
+          LOG.warn(e);
+          sendError(ctx, NO_CONTENT);
+          return;
+        }
         Path path = localFS.makeQualified(
             lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" + ta + "/output/", conf));
-
         String startKey = params.get("start").get(0);
         String endKey = params.get("end").get(0);
         boolean last = params.get("final") != null;
@@ -425,18 +434,23 @@ public class TajoPullServerService extends AbstractService {
           chunks.add(chunk);
         }
 
-        // if a subquery requires a hash shuffle
-      } else if (shuffleType.equals("h")) {
+        // if a subquery requires a hash shuffle or a scattered hash shuffle
+      } else if (shuffleType.equals("h") || shuffleType.equals("s")) {
         for (String ta : taskIds) {
+          if (!lDirAlloc.ifExists(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf)) {
+            LOG.warn(e);
+            sendError(ctx, NO_CONTENT);
+            return;
+          }
           Path path = localFS.makeQualified(
-              lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" +
-                  ta + "/output/" + partId, conf));
+              lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf));
           File file = new File(path.toUri());
           FileChunk chunk = new FileChunk(file, 0, file.length());
           chunks.add(chunk);
         }
       } else {
         LOG.error("Unknown shuffle type: " + shuffleType);
+        sendError(ctx, "Unknown shuffle type:" + shuffleType, BAD_REQUEST);
         return;
       }
 

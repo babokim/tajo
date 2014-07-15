@@ -54,7 +54,7 @@ public class TaskRunnerHistory implements ProtoObject<TaskRunnerHistoryProto> {
     this.startTime = proto.getStartTime();
     this.finishTime = proto.getFinishTime();
     this.executionBlockId = new ExecutionBlockId(proto.getExecutionBlockId());
-    this.taskHistoryMap = Maps.newHashMap();
+    this.taskHistoryMap = Maps.newTreeMap();
     for (TaskHistoryProto taskHistoryProto : proto.getTaskHistoriesList()) {
       TaskHistory taskHistory = new TaskHistory(taskHistoryProto);
       taskHistoryMap.put(taskHistory.getQueryUnitAttemptId(), taskHistory);
@@ -71,7 +71,8 @@ public class TaskRunnerHistory implements ProtoObject<TaskRunnerHistoryProto> {
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(taskRunnerId, executionBlockId, taskHistoryMap);
+    return Objects.hashCode(taskRunnerId, executionBlockId, state, startTime,
+        finishTime, taskHistoryMap.size());
   }
 
   @Override

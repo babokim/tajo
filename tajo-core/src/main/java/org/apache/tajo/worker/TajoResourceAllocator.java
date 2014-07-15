@@ -110,6 +110,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     allocatedResourceMap.clear();
     allocatedSize.set(0);
     executorService.shutdownNow();
+    releaseService.shutdownNow();
     super.serviceStop();
     LOG.info("Tajo Resource Allocator stopped");
   }

@@ -213,7 +213,7 @@ public class FairScheduler extends AbstractScheduler {
 
       LinkedList<QuerySchedulingInfo> queue = queues.get(queueName);
       if (queue == null) {
-        LOG.error("Can't get queue from multiple queue: " + queryId.toString() + ", queue=" + assignedQueueName);
+        //LOG.error("Can't get queue from multiple queue: " + queryId.toString() + ", queue=" + assignedQueueName);
         return;
       }
 
@@ -231,42 +231,42 @@ public class FairScheduler extends AbstractScheduler {
         if (stoppedQuery != null) {
           queue.remove(stoppedQuery);
         } else {
-          LOG.error("No query info in the queue: " + queryId + ", queue=" + assignedQueueName);
+          //LOG.error("No query info in the queue: " + queryId + ", queue=" + assignedQueueName);
           return;
         }
       }
 
       // It this queue is empty, find a query which can be assigned this queue.
-      if (queue.isEmpty()) {
-        String reorganizeTargetQueueName = null;
-        QuerySchedulingInfo reorganizeTargetQuery = null;
-        int maxQueueSize = Integer.MIN_VALUE;
-        for (Map.Entry<String, LinkedList<QuerySchedulingInfo>> entry: queues.entrySet()) {
-          String eachQueueName = entry.getKey();
-          LinkedList<QuerySchedulingInfo> eachQueue = entry.getValue();
-          for (QuerySchedulingInfo eachQuery: eachQueue) {
-            if (eachQuery.getCandidateQueueNames().contains(assignedQueueName)) {
-              if (eachQueue.size() > maxQueueSize) {
-                reorganizeTargetQuery = eachQuery;
-                reorganizeTargetQueueName = eachQueueName;
-                maxQueueSize = eachQueue.size();
-                break;
-              }
-            }
-          }
-        }
-
-        if (reorganizeTargetQueueName != null) {
-          LinkedList<QuerySchedulingInfo> reorganizeTargetQueue = queues.get(reorganizeTargetQueueName);
-          reorganizeTargetQueue.remove(reorganizeTargetQuery);
-
-          reorganizeTargetQuery.setAssignedQueueName(assignedQueueName);
-          queue.add(reorganizeTargetQuery);
-
-          LOG.info(reorganizeTargetQuery.getQueryId() + " is reAssigned from the " + reorganizeTargetQueueName +
-              " to the " + assignedQueueName + " queue");
-        }
-      }
+//      if (queue.isEmpty()) {
+//        String reorganizeTargetQueueName = null;
+//        QuerySchedulingInfo reorganizeTargetQuery = null;
+//        int maxQueueSize = Integer.MIN_VALUE;
+//        for (Map.Entry<String, LinkedList<QuerySchedulingInfo>> entry: queues.entrySet()) {
+//          String eachQueueName = entry.getKey();
+//          LinkedList<QuerySchedulingInfo> eachQueue = entry.getValue();
+//          for (QuerySchedulingInfo eachQuery: eachQueue) {
+//            if (eachQuery.getCandidateQueueNames().contains(assignedQueueName)) {
+//              if (eachQueue.size() > maxQueueSize) {
+//                reorganizeTargetQuery = eachQuery;
+//                reorganizeTargetQueueName = eachQueueName;
+//                maxQueueSize = eachQueue.size();
+//                break;
+//              }
+//            }
+//          }
+//        }
+//
+//        if (reorganizeTargetQueueName != null) {
+//          LinkedList<QuerySchedulingInfo> reorganizeTargetQueue = queues.get(reorganizeTargetQueueName);
+//          reorganizeTargetQueue.remove(reorganizeTargetQuery);
+//
+//          reorganizeTargetQuery.setAssignedQueueName(assignedQueueName);
+//          queue.add(reorganizeTargetQuery);
+//
+//          LOG.info(reorganizeTargetQuery.getQueryId() + " is reAssigned from the " + reorganizeTargetQueueName +
+//              " to the " + assignedQueueName + " queue");
+//        }
+//      }
     }
     wakeupProcessor();
   }
@@ -335,7 +335,7 @@ public class FairScheduler extends AbstractScheduler {
         querySchedulingInfo.setAssignedQueueName(selectedQueue);
         querySchedulingInfo.setCandidateQueueNames(candidateQueueNames);
         queue.push(querySchedulingInfo);
-        queryAssignedMap.put(querySchedulingInfo.getQueryId(), selectedQueue);
+        //queryAssignedMap.put(querySchedulingInfo.getQueryId(), selectedQueue);
 
         LOG.info(querySchedulingInfo.getQueryId() + " is assigned to the [" + selectedQueue + "] queue");
       }
