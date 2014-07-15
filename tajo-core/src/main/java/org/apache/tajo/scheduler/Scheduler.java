@@ -45,6 +45,6 @@ public interface Scheduler {
   public String getStatusHtml();
 
   public enum Mode {
-    FIFO, FIFO_MULTI_QUEUE
+    FIFO, FIFO_MULTI_QUEUE, FAIR
   }
 }

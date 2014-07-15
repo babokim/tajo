@@ -534,10 +534,11 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
-      LOG.error("PullServer error: ", cause);
       if (ch.isConnected()) {
         LOG.error("PullServer error " + e);
         sendError(ctx, INTERNAL_SERVER_ERROR);
+      } else {
+        ctx.getChannel().close();
       }
     }
   }

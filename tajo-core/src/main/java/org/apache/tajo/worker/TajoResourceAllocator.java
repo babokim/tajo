@@ -591,14 +591,14 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
 
         int resources = request.event.getRequiredNum();
         if (request.queueProperty != null && request.queueProperty.getMaxCapacity() > 0) {
-          int fairShares = 1;
           if(request.updatedTime + updateInterval < System.currentTimeMillis()){
             // update the master scheduler status
             int runningSize = allocator.getRunningQueries(request.queueProperty.getQueueName());
-            request.runningInQueue = runningSize < 0 ? request.runningInQueue : runningSize;
+            request.runningInQueue = runningSize > 0 ? runningSize : 1;
           }
           int demandSize = (int) Math.floor(request.queueProperty.getMaxCapacity() / request.runningInQueue);
           resources = Math.min(request.event.getRequiredNum(), demandSize);
+          request.updatedTime = System.currentTimeMillis();
         }
 
         try {
