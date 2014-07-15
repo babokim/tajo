@@ -33,10 +33,7 @@ import org.apache.tajo.engine.eval.FieldEval;
 import org.apache.tajo.engine.planner.Projector;
 import org.apache.tajo.engine.planner.Target;
 import org.apache.tajo.engine.planner.logical.ScanNode;
-import org.apache.tajo.engine.utils.SchemaUtil;
-import org.apache.tajo.engine.utils.TupleCache;
-import org.apache.tajo.engine.utils.TupleCacheKey;
-import org.apache.tajo.engine.utils.TupleUtil;
+import org.apache.tajo.engine.utils.*;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
@@ -66,6 +63,8 @@ public class SeqScanExec extends PhysicalExec {
 
   private boolean cacheRead = false;
 
+  private String evalNodeKey;
+
   public SeqScanExec(TaskAttemptContext context, AbstractStorageManager sm,
                      ScanNode plan, CatalogProtos.FragmentProto [] fragments) throws IOException {
     super(context, plan.getInSchema(), plan.getOutSchema());
@@ -86,6 +85,10 @@ public class SeqScanExec extends PhysicalExec {
 
       cacheKey = new TupleCacheKey(
           context.getTaskId().getQueryUnitId().getExecutionBlockId().toString(), plan.getTableName(), pathNameKey);
+    }
+
+    if (this.qual != null) {
+      evalNodeKey = this.getClass().getName() + "." + this.qual.getClass().getName();
     }
   }
 
@@ -138,6 +141,7 @@ public class SeqScanExec extends PhysicalExec {
   }
 
   public void init() throws IOException {
+    context.stopWatch.reset("SeqScanExec.init");
     Schema projected;
 
     if (fragments != null
@@ -193,6 +197,7 @@ public class SeqScanExec extends PhysicalExec {
     } else {
       initScanner(projected);
     }
+    this.nanoTimeInit = context.stopWatch.checkNano("SeqScanExec.init");
   }
 
   private void initScanner(Schema projected) throws IOException {
@@ -241,11 +246,14 @@ public class SeqScanExec extends PhysicalExec {
     TupleCache.getInstance().addBroadcastCache(cacheKey, broadcastTupleCacheList);
   }
 
+  private long nanoTimeEval;
+
   @Override
   public Tuple next() throws IOException {
     if (fragments == null) {
       return null;
     }
+    context.stopWatch.reset("SeqScanExec.next");
 
     Tuple tuple;
     Tuple outTuple = new VTuple(outColumnNum);
@@ -257,6 +265,8 @@ public class SeqScanExec extends PhysicalExec {
         }
         projector.eval(tuple, outTuple);
         outTuple.setOffset(tuple.getOffset());
+        nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
+        numNext++;
         return outTuple;
       } else {
         return null;
@@ -264,10 +274,17 @@ public class SeqScanExec extends PhysicalExec {
     } else {
       while ((tuple = scanner.next()) != null) {
         if (cacheRead) {
+          nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
+          numNext++;
           return tuple;
         }
-        if (qual.eval(inSchema, tuple).isTrue()) {
+        context.stopWatch.reset(evalNodeKey);
+        Datum evalResult = qual.eval(inSchema, tuple);
+        nanoTimeEval += context.stopWatch.checkNano(evalNodeKey);
+        if (evalResult.isTrue()) {
           projector.eval(tuple, outTuple);
+          nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
+          numNext++;
           return outTuple;
         }
       }
@@ -293,6 +310,8 @@ public class SeqScanExec extends PhysicalExec {
         e.printStackTrace();
       }
     }
+    putProfileMetrics(evalNodeKey + ".nanoTime", nanoTimeEval);
+    closeProfile();
     scanner = null;
     plan = null;
     qual = null;

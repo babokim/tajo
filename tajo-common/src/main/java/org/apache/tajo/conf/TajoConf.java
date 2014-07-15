@@ -342,7 +342,9 @@ public class TajoConf extends Configuration {
     TAJO_DEBUG("tajo.debug", false),
 
     // ONLY FOR TESTCASE
-    TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1)
+    TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1),
+
+    ENABLE_QUERY_PROFILE("tajo.enable.query.profile", false)
     ;
 
     public final String varname;

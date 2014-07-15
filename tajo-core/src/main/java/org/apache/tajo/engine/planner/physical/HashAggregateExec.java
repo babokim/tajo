@@ -45,10 +45,15 @@ public class HashAggregateExec extends AggregationExec {
     this.tuple = new VTuple(plan.getOutSchema().size());
   }
 
+  private long nanoTimeCompute;
+  private long numCompute;
+
   private void compute() throws IOException {
     Tuple tuple;
     Tuple keyTuple;
+    context.stopWatch.reset(getClass().getName() + ".compute");
     while((tuple = child.next()) != null && !context.isStopped()) {
+      numCompute++;
       keyTuple = new VTuple(groupingKeyIds.length);
       // build one key tuple
       for(int i = 0; i < groupingKeyIds.length; i++) {
@@ -79,6 +84,7 @@ public class HashAggregateExec extends AggregationExec {
       }
       hashTable.put(null, contexts);
     }
+    nanoTimeCompute = context.stopWatch.checkNano(getClass().getName() + ".compute");
   }
 
   @Override
@@ -88,7 +94,7 @@ public class HashAggregateExec extends AggregationExec {
       iterator = hashTable.entrySet().iterator();
       computed = true;
     }
-
+    context.stopWatch.reset(getClass().getName() + ".next");
     FunctionContext [] contexts;
 
     if (iterator.hasNext()) {
@@ -103,7 +109,8 @@ public class HashAggregateExec extends AggregationExec {
       for (int funcIdx = 0; funcIdx < aggFunctionsNum; funcIdx++, tupleIdx++) {
         tuple.put(tupleIdx, aggFunctions[funcIdx].terminate(contexts[funcIdx]));
       }
-
+      nanoTimeNext += context.stopWatch.checkNano(getClass().getName() + ".next");
+      numNext++;
       return tuple;
     } else {
       return null;
@@ -119,6 +126,8 @@ public class HashAggregateExec extends AggregationExec {
   public void close() throws IOException {
     super.close();
     hashTable.clear();
+    putProfileMetrics(getClass().getName() + ".compute.nanoTime", nanoTimeCompute);
+    closeProfile();
     hashTable = null;
     iterator = null;
   }

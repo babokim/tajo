@@ -409,6 +409,7 @@ public class Task {
       LOG.error(e.getMessage(), e);
       aborted = true;
     } finally {
+      context.stopWatch.clearAll();
       context.setProgress(1.0f);
       taskRunnerContext.completedTasksNum.incrementAndGet();
 

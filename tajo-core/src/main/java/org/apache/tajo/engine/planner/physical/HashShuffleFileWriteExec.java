@@ -76,11 +76,14 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     storeTablePath = new Path(context.getWorkDir(), "output");
   }
 
+  String profileKey = getClass().getName() + ".next";
   @Override
   public void init() throws IOException {
+    context.stopWatch.reset(getClass().getName() + ".init");
     super.init();
     FileSystem fs = new RawLocalFileSystem();
     fs.mkdirs(storeTablePath);
+    nanoTimeInit = context.stopWatch.checkNano(getClass().getName() + ".init");
   }
   
   private Appender getAppender(int partId) throws IOException {
@@ -109,17 +112,26 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     return StorageUtil.concatPath(storeTablePath, ""+partId);
   }
 
+  long nanoTimeFlush;
   @Override
   public Tuple next() throws IOException {
     Tuple tuple;
     Appender appender;
     int partId;
-    while ((tuple = child.next()) != null) {
+    while (true) {
+      context.stopWatch.reset(profileKey);
+      tuple = child.next();
+      if (tuple == null) {
+        break;
+      }
       partId = partitioner.getPartition(tuple);
       appender = getAppender(partId);
       appender.addTuple(tuple);
+      nanoTimeNext += context.stopWatch.checkNano(profileKey);
+      numNext++;
     }
-    
+
+    context.stopWatch.reset(getClass().getName() + ".flush");
     List<TableStats> statSet = new ArrayList<TableStats>();
     for (Map.Entry<Integer, Appender> entry : appenderMap.entrySet()) {
       int partNum = entry.getKey();
@@ -135,7 +147,8 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     // Collect and aggregated statistics data
     TableStats aggregated = StatisticsUtil.aggregateTableStat(statSet);
     context.setResultStats(aggregated);
-    
+
+    nanoTimeFlush += context.stopWatch.checkNano(getClass().getName() + ".flush");
     return null;
   }
 
@@ -151,7 +164,8 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       appenderMap.clear();
       appenderMap = null;
     }
-
+    putProfileMetrics(getClass().getName() + ".flush.nanoTime", nanoTimeFlush);
+    closeProfile();
     partitioner = null;
     plan = null;
 

@@ -31,6 +31,8 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.enforce.Enforcer;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.query.QueryContext;
+import org.apache.tajo.engine.utils.QueryProfiler;
+import org.apache.tajo.engine.utils.StopWatch;
 import org.apache.tajo.storage.fragment.Fragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
 
@@ -71,6 +73,8 @@ public class TaskAttemptContext {
   private Enforcer enforcer;
   private QueryContext queryContext;
 
+  private boolean enabledProfile;
+  public StopWatch stopWatch;
   public TaskAttemptContext(TajoConf conf, QueryContext queryContext, final QueryUnitAttemptId queryId,
                             final FragmentProto[] fragments,
                             final Path workDir) {
@@ -94,6 +98,9 @@ public class TaskAttemptContext {
     this.shuffleFileOutputs = Maps.newHashMap();
 
     state = TaskAttemptState.TA_PENDING;
+
+    enabledProfile = QueryProfiler.isEnabledProfile(queryContext, conf);
+    stopWatch = new StopWatch(enabledProfile);
   }
 
   @VisibleForTesting
@@ -104,6 +111,14 @@ public class TaskAttemptContext {
 
   public TajoConf getConf() {
     return this.conf;
+  }
+
+  public boolean isEnabledProfile() {
+    return enabledProfile;
+  }
+
+  public String getConfig(String key) {
+    return queryContext.get(key) != null ? queryContext.get(key) : conf.get(key);
   }
   
   public TaskAttemptState getState() {

@@ -106,6 +106,7 @@ public class HashJoinExec extends BinaryPhysicalExec {
     Tuple rightTuple;
     boolean found = false;
 
+    context.stopWatch.reset("HashJoinExec.next");
     while(!finished) {
       if (shouldGetLeftTuple) { // initially, it is true.
         // getting new outer
@@ -144,6 +145,8 @@ public class HashJoinExec extends BinaryPhysicalExec {
       }
     }
 
+    nanoTimeNext += context.stopWatch.checkNano("HashJoinExec.next");
+    numNext++;
     return new VTuple(outTuple);
   }
 
@@ -151,7 +154,12 @@ public class HashJoinExec extends BinaryPhysicalExec {
     Tuple tuple;
     Tuple keyTuple;
 
-    while ((tuple = rightChild.next()) != null) {
+    while (true) {
+      context.stopWatch.reset("HashJoinExec.next");
+      tuple = rightChild.next();
+      if (tuple == null) {
+        break;
+      }
       keyTuple = new VTuple(joinKeyPairs.size());
       for (int i = 0; i < rightKeyList.length; i++) {
         keyTuple.put(i, tuple.get(rightKeyList[i]));
@@ -166,6 +174,8 @@ public class HashJoinExec extends BinaryPhysicalExec {
         newValue.add(tuple);
         tupleSlots.put(keyTuple, newValue);
       }
+      nanoTimeNext += context.stopWatch.checkNano("HashJoinExec.next");
+      numNext++;
     }
 
     first = false;
@@ -190,7 +200,7 @@ public class HashJoinExec extends BinaryPhysicalExec {
       tupleSlots.clear();
       tupleSlots = null;
     }
-
+    closeProfile();
     iterator = null;
     plan = null;
     joinQual = null;
