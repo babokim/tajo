@@ -41,7 +41,6 @@ public class ColumnStats implements ProtoObject<CatalogProtos.ColumnStatsProto>,
   @Expose private Long numNulls = null; // optional
   @Expose private Datum minValue = null; // optional
   @Expose private Datum maxValue = null; // optional
-  @Expose private boolean maxValueNull = false; //optional
 
   public ColumnStats(Column column) {
     this.column = column;
@@ -63,9 +62,6 @@ public class ColumnStats implements ProtoObject<CatalogProtos.ColumnStatsProto>,
     }
     if (proto.hasMaxValue()) {
       this.maxValue = DatumFactory.createFromBytes(getColumn().getDataType(), proto.getMaxValue().toByteArray());
-    }
-    if (proto.hasMaxValueNull()) {
-      this.maxValueNull = proto.getMaxValueNull();
     }
   }
 
@@ -113,12 +109,8 @@ public class ColumnStats implements ProtoObject<CatalogProtos.ColumnStatsProto>,
     this.numNulls = numNulls;
   }
 
-  public boolean isMaxValueNull() {
-    return maxValueNull;
-  }
-
-  public void setMaxValueNull(boolean maxValueNull) {
-    this.maxValueNull = maxValueNull;
+  public boolean hasNullValue() {
+    return numNulls > 0;
   }
 
   public boolean equals(Object obj) {
@@ -146,7 +138,6 @@ public class ColumnStats implements ProtoObject<CatalogProtos.ColumnStatsProto>,
     stat.numNulls = numNulls;
     stat.minValue = minValue;
     stat.maxValue = maxValue;
-    stat.maxValueNull = maxValueNull;
 
     return stat;
   }
@@ -181,7 +172,6 @@ public class ColumnStats implements ProtoObject<CatalogProtos.ColumnStatsProto>,
     if (this.maxValue != null) {
       builder.setMaxValue(ByteString.copyFrom(this.maxValue.asByteArray()));
     }
-    builder.setMaxValueNull(maxValueNull);
 
     return builder.build();
   }

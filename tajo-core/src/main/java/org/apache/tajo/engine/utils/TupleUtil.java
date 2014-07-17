@@ -95,7 +95,7 @@ public class TupleUtil {
       if (columnStat == null) {
         continue;
       }
-      if (columnStat.isMaxValueNull()) {
+      if (columnStat.hasNullValue()) {
         int rangeIndex = sortSpecs[i].isAscending() ? ranges.length - 1 : 0;
         VTuple rangeTuple = sortSpecs[i].isAscending() ? (VTuple) ranges[rangeIndex].getEnd() : (VTuple) ranges[rangeIndex].getStart();
         if (LOG.isDebugEnabled()) {
@@ -136,7 +136,7 @@ public class TupleUtil {
           startTuple.put(i, DatumFactory.createNullDatum());
 
         if (checkNull) {
-          if (statSet.get(col).isMaxValueNull() || statSet.get(col).getMaxValue() == null)
+          if (statSet.get(col).hasNullValue() || statSet.get(col).getMaxValue() == null)
             endTuple.put(i, DatumFactory.createNullDatum());
           else
             endTuple.put(i, statSet.get(col).getMaxValue());
@@ -148,7 +148,7 @@ public class TupleUtil {
         }
       } else {
         if (checkNull) {
-          if (statSet.get(col).isMaxValueNull() || statSet.get(col).getMaxValue() == null)
+          if (statSet.get(col).hasNullValue() || statSet.get(col).getMaxValue() == null)
             startTuple.put(i, DatumFactory.createNullDatum());
           else
             startTuple.put(i, statSet.get(col).getMaxValue());

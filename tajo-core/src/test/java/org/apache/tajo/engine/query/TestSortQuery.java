@@ -181,7 +181,6 @@ public class TestSortQuery extends QueryTestCaseBase {
   @Test
   public final void testSortNullColumn() throws Exception {
     try {
-      executeString("DROP TABLE table1 PURGE;").close();
       testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname, "2");
       KeyValueSet tableOptions = new KeyValueSet();
       tableOptions.put(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
@@ -196,11 +195,11 @@ public class TestSortQuery extends QueryTestCaseBase {
           "3|ARGENTINA",
           "4|CANADA"
       };
-      TajoTestingCluster.createTable("table1", schema, tableOptions, data, 2);
+      TajoTestingCluster.createTable("nullsort", schema, tableOptions, data, 2);
 
       ResultSet res = executeString(
           "select * from (" +
-              "select case when id > 2 then null else id end as col1, name as col2 from table1) a " +
+              "select case when id > 2 then null else id end as col1, name as col2 from nullsort) a " +
           "order by col1, col2"
       );
 
@@ -216,7 +215,7 @@ public class TestSortQuery extends QueryTestCaseBase {
       cleanupQuery(res);
     } finally {
       testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname, "0");
-      executeString("DROP TABLE table1 PURGE;").close();
+      executeString("DROP TABLE nullsort PURGE;").close();
     }
   }
 }

@@ -132,9 +132,6 @@ public class StatisticsUtil {
                 css[i].getMaxValue().compareTo(cs.getMaxValue()) < 0)) {
               css[i].setMaxValue(ts.getColumnStats().get(i).getMaxValue());
             }
-            if (cs.isMaxValueNull()) {
-              css[i].setMaxValueNull(cs.isMaxValueNull());
-            }
           } catch (Exception e) {
             LOG.warn(e.getMessage(), e);
           }
