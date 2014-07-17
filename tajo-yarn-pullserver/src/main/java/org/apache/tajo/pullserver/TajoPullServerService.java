@@ -229,6 +229,10 @@ public class TajoPullServerService extends AbstractService {
       throw new RuntimeException(ex);
     }
     bootstrap.setPipelineFactory(pipelineFact);
+    bootstrap.setOption("reuseAddress", true);
+    bootstrap.setOption("child.tcpNoDelay", true);
+    bootstrap.setOption("child.keepAlive", true);
+
     port = conf.getInt(ConfVars.PULLSERVER_PORT.varname,
         ConfVars.PULLSERVER_PORT.defaultIntVal);
     Channel ch = bootstrap.bind(new InetSocketAddress(port));
@@ -531,10 +535,12 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
-      LOG.error("PullServer error isConnected : " +  ch.isConnected(), cause);
+      LOG.error("PullServer error isConnected : " +  ch.isConnected() + ", " + cause.getMessage());
       if (ch.isConnected()) {
         LOG.error("PullServer error " + e);
         sendError(ctx, INTERNAL_SERVER_ERROR);
+      } else {
+        ctx.getChannel().close();
       }
     }
   }

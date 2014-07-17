@@ -27,13 +27,16 @@ import org.apache.hadoop.yarn.state.*;
 import org.apache.tajo.QueryUnitAttemptId;
 import org.apache.tajo.TajoProtos.TaskAttemptState;
 import org.apache.tajo.catalog.proto.CatalogProtos;
+import org.apache.tajo.catalog.statistics.ColumnStats;
 import org.apache.tajo.catalog.statistics.TableStats;
+import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.ipc.TajoWorkerProtocol.TaskCompletionReport;
 import org.apache.tajo.master.event.*;
 import org.apache.tajo.master.event.QueryUnitAttemptScheduleEvent.QueryUnitAttemptScheduleContext;
 import org.apache.tajo.master.event.TaskSchedulerEvent.EventType;
 import org.apache.tajo.master.querymaster.QueryUnit.IntermediateEntry;
 import org.apache.tajo.master.querymaster.QueryUnit.PullHost;
+import org.apache.tajo.util.TUtil;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -293,6 +296,45 @@ public class QueryUnitAttempt implements EventHandler<TaskAttemptEvent> {
       this.resultStats = report.getResultStats();
       this.getQueryUnit().setStats(new TableStats(resultStats));
     }
+  }
+
+  private TableStats creteTableStats(CatalogProtos.TableStatsProto proto) {
+    TableStats stats = new TableStats();
+    stats.setNumRows(proto.getNumRows());
+    stats.setNumBytes(proto.getNumBytes());
+
+    if (proto.hasNumBlocks()) {
+      stats.setNumBlocks(proto.getNumBlocks());
+    } else {
+      stats.setNumBlocks(0);
+    }
+    if (proto.hasNumShuffleOutputs()) {
+      stats.setNumShuffleOutputs(proto.getNumShuffleOutputs());
+    } else {
+      stats.setNumShuffleOutputs(0);
+    }
+    if (proto.hasAvgRows()) {
+      stats.setAvgRows(proto.getAvgRows());
+    } else {
+      stats.setAvgRows(0);
+    }
+    if (proto.hasReadBytes()) {
+      stats.setReadBytes(proto.getReadBytes());
+    } else {
+      stats.setReadBytes(0l);
+    }
+
+    List<ColumnStats> list = TUtil.newList();
+    stats.setColumnStats(list);
+
+    for (CatalogProtos.ColumnStatsProto colProto : proto.getColStatList()) {
+      if (colProto.getColumn().getDataType().getType() == TajoDataTypes.Type.PROTOBUF) {
+        continue;
+      }
+      stats.getColumnStats().add(new ColumnStats(colProto));
+    }
+
+    return stats;
   }
 
   private static class TaskAttemptScheduleTransition implements

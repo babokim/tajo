@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.worker.TaskAttemptContext;
 import org.apache.tajo.catalog.Schema;
@@ -25,6 +27,8 @@ import org.apache.tajo.catalog.Schema;
 import java.io.IOException;
 
 public abstract class BinaryPhysicalExec extends PhysicalExec {
+  private static final Log LOG = LogFactory.getLog(BinaryPhysicalExec.class);
+
   protected PhysicalExec leftChild;
   protected PhysicalExec rightChild;
   protected float progress;

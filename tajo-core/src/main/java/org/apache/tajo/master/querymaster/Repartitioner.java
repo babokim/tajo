@@ -125,14 +125,18 @@ public class Repartitioner {
     JoinNode joinNode = PlannerUtil.findMostBottomNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
       if ( (joinNode.getJoinType() == JoinType.INNER)) {
+        LogicalNode leftNode = joinNode.getLeftChild();
+        LogicalNode rightNode = joinNode.getRightChild();
         for (int i = 0; i < stats.length; i++) {
-          if (stats[i] == 0) {
-            return;
+          if (scans[i].getPID() == leftNode.getPID() || scans[i].getPID() == rightNode.getPID()) {
+            if (stats[i] == 0) {
+              LOG.info(scans[i] + " 's input data is zero. Inner join's result is empty.");
+              return;
+            }
           }
         }
       }
     }
-
     // If node is outer join and a preserved relation is empty, it should return zero rows.
     joinNode = PlannerUtil.findTopNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
@@ -667,6 +671,9 @@ public class Repartitioner {
 
     for (ExecutionBlock block : masterPlan.getChilds(execBlock)) {
       List<IntermediateEntry> partitions = new ArrayList<IntermediateEntry>();
+
+      QueryUnit[] units = subQuery.getContext().getSubQuery(block.getId()).getQueryUnits();
+
       for (QueryUnit tasks : subQuery.getContext().getSubQuery(block.getId()).getQueryUnits()) {
         if (tasks.getIntermediateData() != null) {
           partitions.addAll(tasks.getIntermediateData());
@@ -717,8 +724,8 @@ public class Repartitioner {
     // be very small. In this case, a few worker of live workers will run for shuffle and we
     // can't use tajo  cluster resource effectively. Thus, we need to increment task number.
     // The task number can be calculated with this formula:
-    //    NUMBER = IntermediateEntry size / SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME.
-    // For reference, SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME default value is 256MB.
+    //    NUMBER = IntermediateEntry size / DIST_QUERY_TABLE_PARTITION_VOLUME.
+    // For reference, DIST_QUERY_TABLE_PARTITION_VOLUME default value is 256MB.
     if (channel.getShuffleType() == SCATTERED_HASH_SHUFFLE) {
       scheduleScatteredHashShuffleFetches(schedulerContext, subQuery, intermediates,
           scan.getTableName());
@@ -739,14 +746,15 @@ public class Repartitioner {
                                                          SubQuery subQuery, Map<ExecutionBlockId, List<IntermediateEntry>> intermediates,
                                                          String tableName) {
     int i = 0;
-    int splitVolume =   subQuery.getContext().getConf().
-        getIntVar(ConfVars.SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME);
+    long splitVolumeMB =
+        QueryContext.getLongVar(subQuery.getContext().getQueryContext(), subQuery.getContext().getConf(),
+        ConfVars.DIST_QUERY_TABLE_PARTITION_VOLUME) * 1048576;
 
     long sumNumBytes = 0L;
     Map<Integer, List<FetchImpl>> fetches = new HashMap<Integer, List<FetchImpl>>();
 
     // Step 1 : divide fetch uris into the the proper number of tasks by
-    // SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME
+    // DIST_QUERY_TABLE_PARTITION_VOLUME
     for (Entry<ExecutionBlockId, List<IntermediateEntry>> listEntry : intermediates.entrySet()) {
 
       // Step 2: Sort IntermediateEntry by partition id. After first sort,
@@ -767,7 +775,7 @@ public class Repartitioner {
             fetches.put(i, TUtil.newList(fetch));
             sumNumBytes = 0L;
           } else {
-            if ((sumNumBytes + interm.getVolume()) < splitVolume) {
+            if ((sumNumBytes + interm.getVolume()) < splitVolumeMB) {
               fetches.get(i).add(fetch);
             } else {
               i++;

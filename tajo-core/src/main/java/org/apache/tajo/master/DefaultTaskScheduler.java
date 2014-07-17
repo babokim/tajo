@@ -750,9 +750,9 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
 
         // if there are no worker matched to the hostname a task request
         if(!leafTaskHostMapping.containsKey(host)){
-          host = NetUtils.normalizeHost(host);
+          String normalizedHost = NetUtils.normalizeHost(host);
 
-          if(!leafTaskHostMapping.containsKey(host) && !taskRequests.isEmpty()){
+          if(!leafTaskHostMapping.containsKey(normalizedHost) && !taskRequests.isEmpty()){
             // this case means one of either cases:
             // * there are no blocks which reside in this node.
             // * all blocks which reside in this node are consumed, and this task runner requests a remote task.
@@ -829,7 +829,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
 
           context.getMasterContext().getEventHandler().handle(new TaskAttemptAssignedEvent(attemptId,
               taskRequest.getContainerId(),
-              host, container.getTaskPort()));
+              container.getTaskHostName(), container.getTaskPort()));
           assignedRequest.add(attemptId);
 
           scheduledObjectNum--;

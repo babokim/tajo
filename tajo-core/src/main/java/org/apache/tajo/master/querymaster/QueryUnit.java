@@ -523,6 +523,7 @@ public class QueryUnit implements EventHandler<TaskEvent> {
       task.succeededPullServerPort = attempt.getPullServerPort();
 
       task.finishTask();
+
       task.eventHandler.handle(new SubQueryTaskEvent(event.getTaskId(), TaskState.SUCCEEDED));
     }
   }
@@ -535,6 +536,7 @@ public class QueryUnit implements EventHandler<TaskEvent> {
       QueryUnitAttempt attempt = task.attempts.get(attemptEvent.getTaskAttemptId());
       task.launchTime = System.currentTimeMillis();
       task.succeededHost = attempt.getHost();
+      //LOG.info("Task AttemptLaunchedTransition:" + task.successfulAttempt + "," + attempt.getHost()) ;
     }
   }
 

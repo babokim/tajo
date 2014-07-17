@@ -70,7 +70,8 @@ public class Schema implements ProtoObject<SchemaProto>, Cloneable, GsonObject {
 
 	public Schema(Schema schema) {
 	  this();
-		this.fields.addAll(schema.fields);
+
+    this.fields.addAll(schema.fields);
 		this.fieldsByQualifiedName.putAll(schema.fieldsByQualifiedName);
     this.fieldsByName.putAll(schema.fieldsByName);
 	}
@@ -291,7 +292,6 @@ public class Schema implements ProtoObject<SchemaProto>, Cloneable, GsonObject {
 		fields.add(newCol);
 		fieldsByQualifiedName.put(newCol.getQualifiedName(), fields.size() - 1);
     fieldsByName.put(newCol.getSimpleName(), TUtil.newList(fields.size() - 1));
-		
 		return this;
 	}
 	
@@ -328,6 +328,13 @@ public class Schema implements ProtoObject<SchemaProto>, Cloneable, GsonObject {
     schema.init();
     for(Column column: this.fields) {
       schema.addColumn(column);
+    }
+    if (getColumns().size() != schema.getColumns().size()) {
+      throw new CloneNotSupportedException("Schema Clone failed : column size mismatced!"
+          + ", old:" + getColumns().size()
+          + ", new:" + schema.getColumns().size()
+          + ", fields:" + this.fields.size()
+       );
     }
     return schema;
   }

@@ -71,9 +71,16 @@ public class TestTablePartitions extends QueryTestCaseBase {
     assertEquals(3, catalog.getTableDesc(DEFAULT_DATABASE_NAME, tableName).getLogicalSchema()
         .size());
 
-    res = testBase.execute(
+    executeString (
         "insert overwrite into " + tableName + " select coalesce(l_orderkey, 0), l_partkey, " +
-            "l_quantity from lineitem");
+            "l_quantity from lineitem").close();
+
+    res = executeString("select count(*) cnt from lineitem");
+    String expected = "cnt\n" +
+        "-------------------------------\n" +
+        "5\n";
+
+    assertEquals(expected, resultSetToString(res));
     res.close();
   }
 

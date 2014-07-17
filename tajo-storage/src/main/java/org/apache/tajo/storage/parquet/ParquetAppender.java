@@ -93,7 +93,7 @@ public class ParquetAppender extends FileAppender {
    */
   @Override
   public long getOffset() throws IOException {
-    return 0;
+    return writer.getPos() + writer.getCurrentPageMemSize();
   }
 
   /**

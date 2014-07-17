@@ -109,15 +109,19 @@ public class WindowAggNode extends UnaryNode implements Projectable, Cloneable {
   public void setChild(LogicalNode subNode) {
     super.setChild(subNode);
   }
-  
+
+  @Override
   public String toString() {
-    StringBuilder sb = new StringBuilder("GroupBy (");
-    if (partitionKeys != null || partitionKeys.length > 0) {
+    StringBuilder sb = new StringBuilder("WinAgg (");
+    if (hasPartitionKeys()) {
       sb.append("partition keys=").append(TUtil.arrayToString(partitionKeys));
       sb.append(", ");
     }
     if (hasAggFunctions()) {
       sb.append("funcs=").append(TUtil.arrayToString(windowFuncs));
+    }
+    if (hasSortSpecs()) {
+      sb.append("sort=").append(TUtil.arrayToString(sortSpecs));
     }
     sb.append(")");
     return sb.toString();

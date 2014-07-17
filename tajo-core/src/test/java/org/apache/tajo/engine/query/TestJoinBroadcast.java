@@ -21,13 +21,8 @@ package org.apache.tajo.engine.query;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
-import org.apache.tajo.IntegrationTest;
-import org.apache.tajo.QueryId;
-import org.apache.tajo.QueryTestCaseBase;
-import org.apache.tajo.TajoConstants;
-import org.apache.tajo.catalog.Schema;
-import org.apache.tajo.catalog.TableDesc;
-import org.apache.tajo.catalog.TableMeta;
+import org.apache.tajo.*;
+import org.apache.tajo.catalog.*;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.Int4Datum;
@@ -53,6 +48,7 @@ import java.util.Collection;
 import java.util.Iterator;
 
 import static junit.framework.TestCase.*;
+import static junit.framework.TestCase.assertEquals;
 import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.*;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -420,7 +416,6 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     executeDDL("customer_partition_ddl.sql", null);
     ResultSet res = executeFile("insert_into_customer_partition.sql");
     res.close();
-
     createMultiFile("nation", 2, new TupleCreator() {
       public Tuple createTuple(String[] columnDatas) {
         return new VTuple(new Datum[]{
@@ -472,6 +467,72 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
 //    executeString("DROP TABLE customer_broad_parts PURGE");
 //    executeString("DROP TABLE lineitem_large_parts PURGE");
 //  }
+
+  @Test
+  public final void testInnerAndOuterWithEmpty() throws Exception {
+    executeDDL("customer_partition_ddl.sql", null);
+    executeFile("insert_into_customer_partition.sql").close();
+
+    // outer join table is empty
+    ResultSet res = executeString(
+        "select a.l_orderkey, b.o_orderkey, c.c_custkey from lineitem a " +
+            "inner join orders b on a.l_orderkey = b.o_orderkey " +
+            "left outer join customer_broad_parts c on a.l_orderkey = c.c_custkey and c.c_custkey < 0"
+    );
+
+    String expected = "l_orderkey,o_orderkey,c_custkey\n" +
+        "-------------------------------\n" +
+        "1,1,null\n" +
+        "1,1,null\n" +
+        "2,2,null\n" +
+        "3,3,null\n" +
+        "3,3,null\n";
+
+    assertEquals(expected, resultSetToString(res));
+    res.close();
+
+    executeString("DROP TABLE customer_broad_parts PURGE").close();
+  }
+  @Test
+  public final void testCasebyCase1() throws Exception {
+    // Left outer join with a small table and a large partition table which not matched any partition path.
+    String tableName = CatalogUtil.normalizeIdentifier("largePartitionedTable");
+    testBase.execute(
+        "create table " + tableName + " (l_partkey int4, l_suppkey int4, l_linenumber int4, \n" +
+            "l_quantity float8, l_extendedprice float8, l_discount float8, l_tax float8, \n" +
+            "l_returnflag text, l_linestatus text, l_shipdate text, l_commitdate text, \n" +
+            "l_receiptdate text, l_shipinstruct text, l_shipmode text, l_comment text) \n" +
+            "partition by column(l_orderkey int4) ").close();
+    TajoTestingCluster cluster = testBase.getTestingCluster();
+    CatalogService catalog = cluster.getMaster().getCatalog();
+    assertTrue(catalog.existsTable(TajoConstants.DEFAULT_DATABASE_NAME, tableName));
+
+    executeString("insert overwrite into " + tableName +
+        " select l_partkey, l_suppkey, l_linenumber, \n" +
+        " l_quantity, l_extendedprice, l_discount, l_tax, \n" +
+        " l_returnflag, l_linestatus, l_shipdate, l_commitdate, \n" +
+        " l_receiptdate, l_shipinstruct, l_shipmode, l_comment, l_orderkey from lineitem_large");
+
+    ResultSet res = executeString(
+        "select a.l_orderkey as key1, b.l_orderkey as key2 from lineitem as a " +
+            "left outer join " + tableName + " b " +
+            "on a.l_partkey = b.l_partkey and b.l_orderkey = 1000"
+    );
+
+    String expected = "key1,key2\n" +
+        "-------------------------------\n" +
+        "1,null\n" +
+        "1,null\n" +
+        "2,null\n" +
+        "3,null\n" +
+        "3,null\n";
+
+    try {
+      assertEquals(expected, resultSetToString(res));
+    } finally {
+      cleanupQuery(res);
+    }
+  }
 
   static interface TupleCreator {
     public Tuple createTuple(String[] columnDatas);

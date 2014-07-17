@@ -1102,4 +1102,11 @@ public class TestJoinQuery extends QueryTestCaseBase {
       executeString("DROP TABLE large_table PURGE").close();
     }
   }
+
+  @Test
+  public final void testOnClauseJoin1() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
 }

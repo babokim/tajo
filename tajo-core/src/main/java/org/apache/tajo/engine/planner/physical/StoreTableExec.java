@@ -43,7 +43,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
 
   private PersistentStoreNode plan;
   private TableMeta meta;
-  private Appender appender;
+  private FileAppender appender;
   private Tuple tuple;
   private TableStats sumStats;
 
@@ -82,12 +82,12 @@ public class StoreTableExec extends UnaryPhysicalExec {
 
     if (plan instanceof InsertNode) {
       InsertNode createTableNode = (InsertNode) plan;
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta,
+      appender = (FileAppender) StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta,
           createTableNode.getTableSchema(), lastFileName);
     } else {
       String nullChar = context.getQueryContext().get(ConfVars.CSVFILE_NULL.varname, ConfVars.CSVFILE_NULL.defaultVal);
       meta.putOption(StorageConstants.CSVFILE_NULL, nullChar);
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
+      appender = (FileAppender) StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
           lastFileName);
     }
 
@@ -102,7 +102,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
   public Tuple next() throws IOException {
     while((tuple = child.next()) != null) {
       appender.addTuple(tuple);
-      writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
+      writtenTupleSize = appender.getOffset();
 
       if (writtenTupleSize > maxPerFileSize) {
         appender.close();

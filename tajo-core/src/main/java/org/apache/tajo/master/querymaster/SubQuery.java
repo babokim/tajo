@@ -35,10 +35,7 @@ import org.apache.hadoop.yarn.util.Records;
 import org.apache.tajo.ExecutionBlockId;
 import org.apache.tajo.QueryIdFactory;
 import org.apache.tajo.QueryUnitId;
-import org.apache.tajo.catalog.CatalogUtil;
-import org.apache.tajo.catalog.Schema;
-import org.apache.tajo.catalog.TableDesc;
-import org.apache.tajo.catalog.TableMeta;
+import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.catalog.statistics.ColumnStats;
 import org.apache.tajo.catalog.statistics.StatisticsUtil;
@@ -530,6 +527,7 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
   private TableStats[] computeStatFromTasks() {
     List<TableStats> inputStatsList = Lists.newArrayList();
     List<TableStats> resultStatsList = Lists.newArrayList();
+    LOG.info("==================================");
 
     int i = 0;
     for (QueryUnit unit : getQueryUnits()) {
@@ -537,48 +535,173 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       if (unit.getLastAttempt().getInputStats() != null) {
         inputStatsList.add(unit.getLastAttempt().getInputStats());
       }
+
       //--------------------- DEBUG START ------------------------//
       if (i > 0) {
+        // Compare InputStats
         TableStats stats1 = inputStatsList.get(i-1);
         TableStats stats2 = unit.getLastAttempt().getInputStats();
 
-        if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
-          LOG.error("## ColumnSize mismatch ### "
-              + ", blockId:" + getId()
-              + ", shuffleType:" + getDataChannel().getShuffleType().name()
-              + ", inputStatsColumnSize:" + getInputStats().getColumnStats().size()
-              + ", resultStatColumnSize:" + getResultStats().getColumnStats().size()
-              + ", previousColumSize:" + stats1.getColumnStats().size()
-              + ", previousShuffleOutputNum:" + stats2.getNumShuffleOutputs()
-              + ", currentColumSize:" + stats1.getColumnStats().size()
-              + ", currentShuffleOutputNum:" + stats2.getNumShuffleOutputs()
-          );
-          abort(SubQueryState.FAILED);
-        } else {
-          int j = 0;
-          for(ColumnStats column1 : stats1.getColumnStats()) {
-            if (column1.getColumn().getDataType() != stats2.getColumnStats().get(j).getColumn()
-                .getDataType()) {
-              LOG.error("## ColumnType mismatch ### "
-                  + ", index:" + j
+        if (stats1.getColumnStats().size() > 0 && stats2.getColumnStats().size() > 0) {
+          if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
+            LOG.error("## InputStats: ColumnSize mismatch ### "
+                + ", i:" + i
+                + ", blockId:" + getId()
+                + ", queryUnitId:" + unit.getId()
+                + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
+                + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
+                + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
+                + ", ScanNodes:" + unit.getScanNodes().length
+                + ", previousColumSize:" + stats1.getColumnStats().size()
+                + ", currentColumSize:" + stats2.getColumnStats().size()
+                + ", channelColumnSize:" + getDataChannel().getSchema().getColumns().size()
+            );
+
+            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
+              ColumnStats column = stats1.getColumnStats().get(j);
+              LOG.error("## InputStats: Previous QueryUnit ### "
+                  + ", i:" + i
+                  + ", j:" + j
                   + ", blockId:" + getId()
-                  + ", shuffleType:" + getDataChannel().getShuffleType().name()
-                  + ", inputStatsColumnSize:" + getInputStats().getColumnStats().size()
-                  + ", resultStatColumnSize:" + getResultStats().getColumnStats().size()
-                  + ", previousColumSize:" + stats1.getColumnStats().size()
-                  + ", previousShuffleOutputNum:" + stats2.getNumShuffleOutputs()
-                  + ", currentColumSize:" + stats1.getColumnStats().size()
-                  + ", currentShuffleOutputNum:" + stats2.getNumShuffleOutputs()
+                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
+                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
+                  + ", column" + column.getColumn().toJson()
               );
-              abort(SubQueryState.FAILED);
             }
-            j++;
+
+            for (int j = 0; j < stats2.getColumnStats().size(); j++) {
+              ColumnStats column = stats2.getColumnStats().get(j);
+              LOG.error("## InputStats: Current QueryUnit ### "
+                  + ", i:" + i
+                  + ", j:" + j
+                  + ", blockId:" + getId()
+                  + ", queryUnitId:" + unit.getId()
+                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
+                  + ", column" + column.getColumn().toJson()
+              );
+            }
+
+            abort(SubQueryState.ERROR);
+          } else {
+            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
+              ColumnStats column1 = stats1.getColumnStats().get(j);
+              if (!column1.getColumn().getDataType().equals(stats2.getColumnStats().get(j)
+                  .getColumn().getDataType())) {
+                LOG.error("## InputStats: ColumnType mismatch ### "
+                    + ", i:" + i
+                    + ", j:" + j
+                    + ", blockId:" + getId()
+                    + ", queryUnitId:" + unit.getId()
+                    + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
+                    + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
+                    + ", ScanNodes:" + unit.getScanNodes().length
+                    + ", newColumn" + column1.getColumn().toJson()
+                    + ", oldColumn" + stats2.getColumnStats().get(j).getColumn().toJson()
+                );
+                abort(SubQueryState.ERROR);
+              }
+            }
+          }
+        }
+
+        // Compare ResultStats
+        stats1 = resultStatsList.get(i - 1);
+        stats2 = unit.getStats();
+
+        if (stats1.getColumnStats().size() > 0 && stats2.getColumnStats().size() > 0) {
+          if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
+            LOG.error("## ResultStats: ColumnSize mismatch ### "
+                + "i:" + i
+                + ", blockId:" + getId()
+                + ", queryUnitId:" + unit.getId()
+                + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
+                + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
+                + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
+                + ", ScanNodes:" + unit.getScanNodes().length
+                + ", previousColumSize:" + stats1.getColumnStats().size()
+                + ", currentColumSize:" + stats2.getColumnStats().size()
+                + ", channelColumnSize:" + getDataChannel().getSchema().getColumns().size()
+            );
+
+
+            for (ScanNode scan : unit.getScanNodes()) {
+              LOG.error("## ResultStats: currentScanNode ### "
+                  + "i:" + i
+                  + ", blockId:" + getId()
+                  + ", queryUnitId:" + unit.getId()
+                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
+                  + ", tableName:" + scan.getTableName()
+                  + ", inputColumns:" + scan.getInSchema().getColumns().size()
+                  + ", outputColumns:" + scan.getOutSchema().getColumns().size()
+                  + ", qual:" + scan.getQual().toJson()
+              );
+            }
+
+            for (ScanNode scan : getQueryUnits()[i-1].getScanNodes()) {
+              LOG.error("## ResultStats: previousScanNode ### "
+                  + "i:" + i
+                  + ", blockId:" + getId()
+                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
+                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
+                  + ", tableName:" + scan.getTableName()
+                  + ", inputColumns:" + scan.getInSchema().getColumns().size()
+                  + ", outputColumns:" + scan.getOutSchema().getColumns().size()
+                  + ", qual:" + scan.getQual().toJson()
+              );
+            }
+
+            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
+              ColumnStats column = stats1.getColumnStats().get(j);
+              LOG.error("## ResultStats: Previous QueryUnit ### "
+                  + ", i:" + i
+                  + ", j:" + j
+                  + ", blockId:" + getId()
+                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
+                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
+                  + ", column" + column.getColumn().toJson()
+              );
+            }
+
+            for (int j = 0; j < stats2.getColumnStats().size(); j++) {
+              ColumnStats column = stats2.getColumnStats().get(j);
+              LOG.error("## ResultStats: Current QueryUnit ### "
+                  + ", i:" + i
+                  + ", j:" + j
+                  + ", blockId:" + getId()
+                  + ", queryUnitId:" + unit.getId()
+                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
+                  + ", column" + column.getColumn().toJson()
+              );
+            }
+
+            abort(SubQueryState.ERROR);
+          } else {
+            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
+              ColumnStats column = stats1.getColumnStats().get(j);
+              if (!column.getColumn().getDataType().equals(stats2.getColumnStats().get(j)
+                  .getColumn().getDataType())) {
+                LOG.error("## ResultStats: ColumnType mismatch ### "
+                    + ", i:" + i
+                    + ", j:" + j
+                    + ", blockId:" + getId()
+                    + ", queryUnitId:" + unit.getId()
+                    + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
+                    + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
+                    + ", ScanNodes:" + unit.getScanNodes().length
+                    + ", newColumn" + column.getColumn().toJson()
+                    + ", oldColumn" + stats2.getColumnStats().get(j).getColumn().toJson()
+                );
+                abort(SubQueryState.ERROR);
+              }
+            }
           }
         }
       }
+
       i++;
       //--------------------- DEBUG END ------------------------//
     }
+
     try {
       TableStats inputStats = StatisticsUtil.aggregateTableStat(inputStatsList);
       TableStats resultStats = StatisticsUtil.aggregateTableStat(resultStatsList);

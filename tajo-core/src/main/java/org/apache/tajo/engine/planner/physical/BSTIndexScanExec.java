@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IOUtils;
 import org.apache.tajo.catalog.Schema;
@@ -33,6 +35,8 @@ import org.apache.tajo.worker.TaskAttemptContext;
 import java.io.IOException;
 
 public class BSTIndexScanExec extends PhysicalExec {
+  private static final Log LOG = LogFactory.getLog(BSTIndexScanExec.class);
+
   private ScanNode scanNode;
   private SeekableScanner fileScanner;
   
@@ -51,6 +55,7 @@ public class BSTIndexScanExec extends PhysicalExec {
                           AbstractStorageManager sm , ScanNode scanNode ,
        FileFragment fragment, Path fileName , Schema keySchema,
        TupleComparator comparator , Datum[] datum) throws IOException {
+
     super(context, scanNode.getInSchema(), scanNode.getOutSchema());
     this.scanNode = scanNode;
     this.qual = scanNode.getQual();

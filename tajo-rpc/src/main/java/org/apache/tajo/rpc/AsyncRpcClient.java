@@ -135,7 +135,8 @@ public class AsyncRpcClient extends NettyClientBase {
           .setMethodName(method.getName());
 
       if (param != null) {
-          requestBuilder.setRequestMessage(param.toByteString());
+          ByteString aaa =  param.toByteString();
+          requestBuilder.setRequestMessage(aaa);
       }
 
       return requestBuilder.build();

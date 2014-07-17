@@ -62,32 +62,32 @@ public abstract class ColPartitionStoreExec extends UnaryPhysicalExec {
         }
       };
 
-  public ColPartitionStoreExec(TaskAttemptContext context, StoreTableNode plan, PhysicalExec child) {
-    super(context, plan.getInSchema(), plan.getOutSchema(), child);
-    this.plan = plan;
+     public ColPartitionStoreExec(TaskAttemptContext context, StoreTableNode plan, PhysicalExec child) {
+      super(context, plan.getInSchema(), plan.getOutSchema(), child);
+      this.plan = plan;
 
 
-    if (plan.getType() == NodeType.CREATE_TABLE) {
-      this.outSchema = ((CreateTableNode)plan).getTableSchema();
-    } else if (plan.getType() == NodeType.INSERT) {
-      this.outSchema = ((InsertNode)plan).getTableSchema();
-    }
+      if (plan.getType() == NodeType.CREATE_TABLE) {
+        this.outSchema = ((CreateTableNode)plan).getTableSchema();
+      } else if (plan.getType() == NodeType.INSERT) {
+        this.outSchema = ((InsertNode)plan).getTableSchema();
+      }
 
-    // set table meta
-    if (this.plan.hasOptions()) {
-      meta = CatalogUtil.newTableMeta(plan.getStorageType(), plan.getOptions());
-    } else {
-      meta = CatalogUtil.newTableMeta(plan.getStorageType());
-    }
+      // set table meta
+      if (this.plan.hasOptions()) {
+        meta = CatalogUtil.newTableMeta(plan.getStorageType(), plan.getOptions());
+      } else {
+        meta = CatalogUtil.newTableMeta(plan.getStorageType());
+      }
 
-    // Find column index to name subpartition directory path
-    keyNum = this.plan.getPartitionMethod().getExpressionSchema().size();
+      // Find column index to name subpartition directory path
+      keyNum = this.plan.getPartitionMethod().getExpressionSchema().size();
 
-    if (plan.getType() == NodeType.INSERT && keyNum > 0) {
-      Column[] removedPartitionColumns = new Column[this.outSchema.size() - keyNum];
-      System.arraycopy(this.outSchema.toArray(), 0, removedPartitionColumns, 0, removedPartitionColumns.length);
-      this.outSchema = new Schema(removedPartitionColumns);
-    }
+      if (plan.getType() == NodeType.INSERT && keyNum > 0) {
+        Column[] removedPartitionColumns = new Column[this.outSchema.size() - keyNum];
+        System.arraycopy(this.outSchema.toArray(), 0, removedPartitionColumns, 0, removedPartitionColumns.length);
+        this.outSchema = new Schema(removedPartitionColumns);
+      }
 
     keyIds = new int[keyNum];
     keyNames = new String[keyNum];

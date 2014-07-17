@@ -56,6 +56,6 @@ public abstract class FileAppender implements Appender {
 
     this.enabledStats = true;
   }
-
   public abstract long getOffset() throws IOException;
+
 }

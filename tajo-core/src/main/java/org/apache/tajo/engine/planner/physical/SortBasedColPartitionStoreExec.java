@@ -48,7 +48,7 @@ public class SortBasedColPartitionStoreExec extends ColPartitionStoreExec {
   private Tuple currentKey;
   private Tuple prevKey;
 
-  private Appender appender;
+  private FileAppender appender;
   private TableStats aggregated;
 
   // for file rotating
@@ -103,13 +103,13 @@ public class SortBasedColPartitionStoreExec extends ColPartitionStoreExec {
 
     if (plan instanceof InsertNode) {
       InsertNode createTableNode = (InsertNode) plan;
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
+      appender = (FileAppender) StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
           actualFilePath);
     } else {
       String nullChar = context.getQueryContext().get(TajoConf.ConfVars.CSVFILE_NULL.varname,
                 TajoConf.ConfVars.CSVFILE_NULL.defaultVal);
       meta.putOption(StorageConstants.CSVFILE_NULL, nullChar);
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
+      appender = (FileAppender) StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema,
           actualFilePath);
     }
 
@@ -145,7 +145,7 @@ public class SortBasedColPartitionStoreExec extends ColPartitionStoreExec {
       fillKeyTuple(tuple, currentKey);
 
       if (prevKey == null) {
-        appender = getAppenderForNewPartition(getSubdirectory(currentKey));
+        appender = (FileAppender) getAppenderForNewPartition(getSubdirectory(currentKey));
         prevKey = new VTuple(currentKey);
       } else {
 
@@ -153,7 +153,7 @@ public class SortBasedColPartitionStoreExec extends ColPartitionStoreExec {
           appender.close();
           StatisticsUtil.aggregateTableStat(aggregated, appender.getStats());
 
-          appender = getAppenderForNewPartition(getSubdirectory(currentKey));
+          appender = (FileAppender) getAppenderForNewPartition(getSubdirectory(currentKey));
           prevKey = new VTuple(currentKey);
 
           // reset all states for file rotating
@@ -163,13 +163,13 @@ public class SortBasedColPartitionStoreExec extends ColPartitionStoreExec {
       }
 
       appender.addTuple(tuple);
-      writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
+      writtenTupleSize = appender.getOffset();
 
       if (writtenTupleSize > maxPerFileSize) {
         appender.close();
         writtenFileNum++;
         StatisticsUtil.aggregateTableStat(aggregated, appender.getStats());
-
+        LOG.info(appender.getClass().getName() + " writtenTupleSize:" + writtenTupleSize + ", maxPerFileSize : " + maxPerFileSize);
         openNewFile(writtenFileNum);
         writtenTupleSize = 0;
       }

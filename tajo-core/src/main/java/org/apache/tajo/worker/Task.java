@@ -215,6 +215,22 @@ public class Task {
       LOG.debug("* plan:\n");
       LOG.debug(plan.toString());
     }
+    for (String str : context.getInputTables()) {
+      LOG.info("* InputTableName:" + str);
+
+      LOG.info("* ShuffleBlockId:" + context.getDataChannel().getTargetId());
+      LOG.info("* ShuffleOutputNum:" + context.getDataChannel().getShuffleOutputNum());
+      LOG.info("* ShuffleSchemaColumns:" + context.getDataChannel().getSchema().getColumns().size());
+      LOG.info("* ShuffleKeys:" + context.getDataChannel().getShuffleKeys().length);
+
+      LOG.info("* inputStats - ColumnStatsSize:" + inputStats.getColumnStats().size());
+      LOG.info("* Plan - inColumns:" + plan.getInSchema().getColumns().size()
+          + ", outColumns:" + plan.getOutSchema().getColumns().size());
+
+
+      LOG.info("* plan:\n");
+      LOG.info(plan.toString());
+    }
     LOG.info("==================================");
   }
 
@@ -731,7 +747,7 @@ public class Task {
         int remainingRetries = MAX_RETRIES;
         @Override
         public void run() {
-          while (!stop.get() && !stopped) {
+          while (!stop.get() && !stopped && !context.isStopped()) {
             try {
               if(executor != null && context.getProgress() < 1.0f) {
                 float progress = executor.getProgress();
@@ -756,7 +772,7 @@ public class Task {
                 throw new RuntimeException(t);
               }
             } finally {
-              if (remainingRetries > 0) {
+              if (!context.isStopped() &&remainingRetries > 0) {
                 synchronized (pingThread) {
                   try {
                     pingThread.wait(PROGRESS_INTERVAL);

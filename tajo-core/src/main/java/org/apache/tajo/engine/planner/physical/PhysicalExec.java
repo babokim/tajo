@@ -19,6 +19,7 @@
 package org.apache.tajo.engine.planner.physical;
 
 import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.Path;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SchemaObject;
@@ -30,6 +31,7 @@ import java.io.IOException;
 import java.util.UUID;
 
 public abstract class PhysicalExec implements SchemaObject {
+  private static final Log LOG = LogFactory.getLog(EvalExprExec.class);
   protected final TaskAttemptContext context;
   protected Schema inSchema;
   protected Schema outSchema;

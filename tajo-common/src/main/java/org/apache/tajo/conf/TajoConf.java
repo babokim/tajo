@@ -226,7 +226,6 @@ public class TajoConf extends Configuration {
     SHUFFLE_SSL_ENABLED_KEY("tajo.pullserver.ssl.enabled", false),
     SHUFFLE_FILE_FORMAT("tajo.shuffle.file-format", "RAW"),
     SHUFFLE_FETCHER_PARALLEL_EXECUTION_MAX_NUM("tajo.shuffle.fetcher.parallel-execution.max-num", 2),
-    SCATTERED_HASH_SHUFFLE_SPLIT_VOLUME("tajo.scattered.hash.shuffle.split.volume", 256 * 1024 * 1024),
 
     //////////////////////////////////
     // Storage Configuration
@@ -251,6 +250,7 @@ public class TajoConf extends Configuration {
     DIST_QUERY_JOIN_TASK_VOLUME("tajo.dist-query.join.task-volume-mb", 128),
     DIST_QUERY_SORT_TASK_VOLUME("tajo.dist-query.sort.task-volume-mb", 128),
     DIST_QUERY_GROUPBY_TASK_VOLUME("tajo.dist-query.groupby.task-volume-mb", 128),
+    DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb", 256),
 
     DIST_QUERY_JOIN_PARTITION_VOLUME("tajo.dist-query.join.partition-volume-mb", 128),
     DIST_QUERY_SORT_PARTITION_VOLUME("tajo.dist-query.sort.partition-volume-mb", 256),
@@ -456,8 +456,12 @@ public class TajoConf extends Configuration {
   }
 
   public static long getLongVar(Configuration conf, ConfVars var) {
-    assert (var.valClass == Long.class);
-    return conf.getLong(var.varname, var.defaultLongVal);
+    assert (var.valClass == Long.class || var.valClass == Integer.class);
+    if (var.valClass == Integer.class) {
+      return conf.getInt(var.varname, var.defaultIntVal);
+    } else {
+      return conf.getLong(var.varname, var.defaultLongVal);
+    }
   }
 
   public static long getLongVar(Configuration conf, ConfVars var, long defaultVal) {

@@ -605,14 +605,14 @@ public abstract class AbstractStorageManager {
         }
       }
       if(LOG.isDebugEnabled()){
-        LOG.debug("# of splits per partition: " + (splits.size() - previousSplitSize));
+        LOG.debug(tableName + " # of splits per partition: " + (splits.size() - previousSplitSize));
       }
     }
 
     // Combine original fileFragments with new VolumeId information
     setVolumeMeta(volumeSplits, blockLocations);
     splits.addAll(volumeSplits);
-    LOG.info("Total # of splits: " + splits.size());
+    LOG.info("Total # of splits of " + tableName + ": " + splits.size());
     return splits;
   }
 

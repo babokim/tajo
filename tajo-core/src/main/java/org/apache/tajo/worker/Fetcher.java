@@ -27,7 +27,6 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.handler.codec.http.*;
-import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timer;
@@ -85,6 +84,7 @@ public class Fetcher {
     bootstrap.setOption("connectTimeoutMillis", 5000L); // set 5 sec
     bootstrap.setOption("receiveBufferSize", 1048576); // set 1M
     bootstrap.setOption("tcpNoDelay", true);
+    bootstrap.setOption("keepAlive", true);
 
     ChannelPipelineFactory pipelineFactory = new HttpClientPipelineFactory(file);
     bootstrap.setPipelineFactory(pipelineFactory);
@@ -111,11 +111,12 @@ public class Fetcher {
   }
 
   public File get() throws IOException {
+    ChannelFuture future = null;
     try {
       startTime = System.currentTimeMillis();
       this.state = TajoProtos.FetcherState.FETCH_FETCHING;
 
-      ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+      future = bootstrap.connect(new InetSocketAddress(host, port));
 
       // Wait until the connection attempt succeeds or fails.
       Channel channel = future.awaitUninterruptibly().getChannel();
@@ -141,10 +142,10 @@ public class Fetcher {
 
       channelFuture.addListener(ChannelFutureListener.CLOSE);
 
-      // Close the channel to exit.
-      future.getChannel().close();
       return file;
     } finally {
+      // Close the channel to exit.
+      if(future != null) future.getChannel().close();
       LOG.info("Fetcher closed: " + uri + "," + state);
       timer.stop();
     }
@@ -243,10 +244,8 @@ public class Fetcher {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e)
       throws Exception {
-      if (e.getCause() instanceof ReadTimeoutException) {
-        ctx.getChannel().close();
-      }
       LOG.error("Fetcher Error: ", e.getCause());
+      ctx.getChannel().close();
     }
   }
 
