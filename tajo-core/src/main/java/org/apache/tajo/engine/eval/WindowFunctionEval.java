@@ -19,7 +19,6 @@
 package org.apache.tajo.engine.eval;
 
 import com.google.gson.annotations.Expose;
-import org.apache.tajo.algebra.WindowSpecExpr;
 import org.apache.tajo.catalog.FunctionDesc;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SortSpec;
@@ -101,10 +100,12 @@ public class WindowFunctionEval extends AggregationFunctionCallEval implements C
 
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    for(int i=0; i < argEvals.length; i++) {
-      sb.append(argEvals[i]);
-      if(i+1 < argEvals.length)
-        sb.append(",");
+    if (argEvals != null) {
+      for(int i=0; i < argEvals.length; i++) {
+        sb.append(argEvals[i]);
+        if(i+1 < argEvals.length)
+          sb.append(",");
+      }
     }
     sb.append(funcDesc.getSignature()).append("(").append(isDistinct() ? " distinct" : "").append(sb)
         .append(")");

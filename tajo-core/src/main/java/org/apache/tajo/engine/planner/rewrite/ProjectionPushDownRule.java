@@ -27,6 +27,7 @@ import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SortSpec;
 import org.apache.tajo.engine.eval.*;
 import org.apache.tajo.engine.planner.*;
+import org.apache.tajo.engine.planner.LogicalPlan.QueryBlock;
 import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.utils.SchemaUtil;
 import org.apache.tajo.util.TUtil;
@@ -57,7 +58,7 @@ public class ProjectionPushDownRule extends
     if (PlannerUtil.checkIfDDLPlan(toBeOptimized)) {
       return false;
     }
-    for (LogicalPlan.QueryBlock eachBlock: plan.getQueryBlocks()) {
+    for (QueryBlock eachBlock: plan.getQueryBlocks()) {
       if (eachBlock.hasTableExpression()) {
         return true;
       }
@@ -833,7 +834,9 @@ public class ProjectionPushDownRule extends
     // If one of both terms in a binary operator is a complex expression, the binary operator will require
     // multiple phases. In this case, join cannot evaluate a binary operator.
     // So, we should prevent dividing the binary operator into more subexpressions.
-    if (term.getType() != EvalType.FIELD && !(term instanceof BinaryEval) && !(term instanceof RowConstantEval)) {
+    if (term.getType() != EvalType.FIELD &&
+        !(term instanceof BinaryEval) &&
+        !(term.getType() == EvalType.ROW_CONSTANT)) {
       String refName = ctx.addExpr(term);
       EvalTreeUtil.replace(cnf, term, new FieldEval(refName, term.getValueType()));
     }

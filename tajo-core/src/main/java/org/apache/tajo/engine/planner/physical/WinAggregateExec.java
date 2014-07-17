@@ -19,7 +19,6 @@
 package org.apache.tajo.engine.planner.physical;
 
 import com.google.common.collect.Lists;
-import org.apache.tajo.algebra.WindowSpecExpr;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SortSpec;
@@ -38,9 +37,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
-
-import static org.apache.tajo.algebra.WindowSpecExpr.WindowFrameStartBoundType;
-import static org.apache.tajo.catalog.proto.CatalogProtos.FunctionType;
 
 /**
  * This is the sort-based window operator.

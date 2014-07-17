@@ -22,6 +22,8 @@ import com.google.common.collect.Sets;
 import org.apache.tajo.algebra.*;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.engine.exception.NoSuchColumnException;
+import org.apache.tajo.engine.planner.nameresolver.NameResolvingMode;
+import org.apache.tajo.engine.planner.nameresolver.NameResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -89,8 +91,7 @@ class ExprNormalizer extends SimpleAlgebraVisitor<ExprNormalizer.ExprNormalizedR
                    // function.
     List<NamedExpr> aggExprs = new ArrayList<NamedExpr>(); // aggregation functions
     List<NamedExpr> scalarExprs = new ArrayList<NamedExpr>(); // scalar expressions which can be referred
-
-    List<NamedExpr> windowAggExprs = new ArrayList<NamedExpr>(); // scalar expressions which can be referred
+    List<NamedExpr> windowAggExprs = new ArrayList<NamedExpr>(); // window expressions which can be referred
     Set<WindowSpecReferences> windowSpecs = Sets.newLinkedHashSet();
 
     private ExprNormalizedResult(LogicalPlanner.PlanContext context, boolean tryBinaryCommonTermsElimination) {
@@ -267,7 +268,7 @@ class ExprNormalizer extends SimpleAlgebraVisitor<ExprNormalizer.ExprNormalizedR
       throws PlanningException {
     stack.push(expr);
 
-    WindowSpecExpr windowSpec = expr.getWindowSpec();
+    WindowSpec windowSpec = expr.getWindowSpec();
     Expr key;
 
     WindowSpecReferences windowSpecReferences;
@@ -329,11 +330,18 @@ class ExprNormalizer extends SimpleAlgebraVisitor<ExprNormalizer.ExprNormalizedR
   @Override
   public Expr visitColumnReference(ExprNormalizedResult ctx, Stack<Expr> stack, ColumnReferenceExpr expr)
       throws PlanningException {
+
+    if (ctx.block.isAliasedName(expr.getCanonicalName())) {
+      String originalName = ctx.block.getOriginalName(expr.getCanonicalName());
+      expr.setName(originalName);
+      return expr;
+    }
     // if a column reference is not qualified, it finds and sets the qualified column name.
     if (!(expr.hasQualifier() && CatalogUtil.isFQTableName(expr.getQualifier()))) {
       if (!ctx.block.namedExprsMgr.contains(expr.getCanonicalName()) && expr.getType() == OpType.Column) {
         try {
-          String normalized = ctx.plan.getNormalizedColumnName(ctx.block, expr);
+          String normalized =
+              NameResolver.resolve(ctx.plan, ctx.block, expr, NameResolvingMode.LEGACY).getQualifiedName();
           expr.setName(normalized);
         } catch (NoSuchColumnException nsc) {
         }

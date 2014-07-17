@@ -46,7 +46,8 @@ public class BroadcastJoinMarkCandidateVisitor extends BasicLogicalPlanVisitor<G
       visit(context, plan, block, rightChild, stack);
     }
 
-    if(isBroadcastCandidateNode(leftChild) && isBroadcastCandidateNode(rightChild)) {
+    if(isBroadcastCandidateNode(leftChild) &&
+        isBroadcastCandidateNode(rightChild)) {
       node.setCandidateBroadcast(true);
     }
 

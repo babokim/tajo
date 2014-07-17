@@ -30,6 +30,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.tajo.algebra.*;
+import org.apache.tajo.algebra.WindowSpec;
 import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.partition.PartitionMethodDesc;
 import org.apache.tajo.catalog.proto.CatalogProtos;
@@ -39,17 +40,19 @@ import org.apache.tajo.engine.eval.*;
 import org.apache.tajo.engine.exception.VerifyException;
 import org.apache.tajo.engine.planner.LogicalPlan.QueryBlock;
 import org.apache.tajo.engine.planner.logical.*;
+import org.apache.tajo.engine.planner.nameresolver.NameResolvingMode;
 import org.apache.tajo.engine.planner.rewrite.ProjectionPushDownRule;
 import org.apache.tajo.engine.utils.SchemaUtil;
 import org.apache.tajo.master.session.Session;
 import org.apache.tajo.storage.StorageUtil;
-import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.util.Pair;
+import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.util.TUtil;
 
 import java.util.*;
 
 import static org.apache.tajo.algebra.CreateTable.PartitionType;
+
 import static org.apache.tajo.engine.planner.ExprNormalizer.ExprNormalizedResult;
 import static org.apache.tajo.engine.planner.LogicalPlan.BlockType;
 import static org.apache.tajo.engine.planner.LogicalPlanPreprocessor.PreprocessContext;
@@ -259,7 +262,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     Target [] rawTargets = new Target[projection.getNamedExprs().length];
     for (int i = 0; i < projection.getNamedExprs().length; i++) {
       NamedExpr namedExpr = projection.getNamedExprs()[i];
-      EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr());
+      EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr(),
+          NameResolvingMode.SUBEXPRS_AND_RELS);
       rawTargets[i] = new Target(evalNode, referenceNames[i]);
     }
     // it's for debugging or unit testing
@@ -382,7 +386,7 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
 
     for (int i = 0; i < targets.length; i++) {
       NamedExpr namedExpr = projection.getNamedExprs()[i];
-      EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr());
+      EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr(), NameResolvingMode.RELS_ONLY);
       if (namedExpr.hasAlias()) {
         targets[i] = new Target(evalNode, namedExpr.getAlias());
       } else {
@@ -406,7 +410,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
         targets[i] = block.namedExprsMgr.getTarget(referenceNames[i]);
       } else {
         NamedExpr namedExpr = block.namedExprsMgr.getNamedExpr(referenceNames[i]);
-        EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr(),
+            NameResolvingMode.RELS_AND_SUBEXPRS);
         block.namedExprsMgr.markAsEvaluated(referenceNames[i], evalNode);
         targets[i] = new Target(evalNode, referenceNames[i]);
       }
@@ -414,76 +419,113 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     return targets;
   }
 
+  /**
+   * It checks if all targets of Projectable plan node can be evaluated from the child node.
+   * It can avoid potential errors which possibly occur in physical operators.
+   *
+   * @param block QueryBlock which includes the Projectable node
+   * @param projectable Projectable node to be valid
+   * @throws PlanningException
+   */
   public static void verifyProjectedFields(QueryBlock block, Projectable projectable) throws PlanningException {
-    if (projectable instanceof ProjectionNode) {
-      if (block.hasNode(NodeType.GROUP_BY) && !block.hasWindowSpecs()) {
-        for (Target target : projectable.getTargets()) {
-          Set<Column> columns = EvalTreeUtil.findUniqueColumns(target.getEvalTree());
-          for (Column c : columns) {
-            if (!projectable.getInSchema().contains(c)) {
-              throw new PlanningException(c.getQualifiedName()
-                  + " must appear in the GROUP BY clause or be used in an aggregate function at node ("
-                  + projectable.getPID() + ")");
-            }
-          }
-        }
-      }
-    } else  if (projectable instanceof GroupbyNode) {
+    if (projectable instanceof GroupbyNode) {
       GroupbyNode groupbyNode = (GroupbyNode) projectable;
-      // It checks if all column references within each target can be evaluated with the input schema.
-      int groupingColumnNum = groupbyNode.getGroupingColumns().length;
-      for (int i = 0; i < groupingColumnNum; i++) {
-        Set<Column> columns = EvalTreeUtil.findUniqueColumns(groupbyNode.getTargets()[i].getEvalTree());
-        if (!projectable.getInSchema().containsAll(columns)) {
-          throw new PlanningException(String.format("Cannot get the field(s) \"%s\" at node (%d)",
-              TUtil.collectionToString(columns), projectable.getPID()));
-        }
-      }
-      if (groupbyNode.hasAggFunctions()) {
-        for (AggregationFunctionCallEval f : groupbyNode.getAggFunctions()) {
-          Set<Column> columns = EvalTreeUtil.findUniqueColumns(f);
-          for (Column c : columns) {
-            if (!projectable.getInSchema().contains(c)) {
-              throw new PlanningException(String.format("Cannot get the field \"%s\" at node (%d)",
-                  c, projectable.getPID()));
+
+      if (!groupbyNode.isEmptyGrouping()) { // it should be targets instead of
+        int groupingKeyNum = groupbyNode.getGroupingColumns().length;
+
+        for (int i = 0; i < groupingKeyNum; i++) {
+          Target target = groupbyNode.getTargets()[i];
+          if (groupbyNode.getTargets()[i].getEvalTree().getType() == EvalType.FIELD) {
+            FieldEval grpKeyEvalNode = target.getEvalTree();
+            if (!groupbyNode.getInSchema().contains(grpKeyEvalNode.getColumnRef())) {
+              throwCannotEvaluateException(projectable, grpKeyEvalNode.getName());
             }
           }
         }
       }
-    } else if (projectable instanceof RelationNode) {
-      RelationNode relationNode = (RelationNode) projectable;
-      for (Target target : projectable.getTargets()) {
-        Set<Column> columns = EvalTreeUtil.findUniqueColumns(target.getEvalTree());
-        for (Column c : columns) {
-          if (!relationNode.getTableSchema().contains(c)) {
-            throw new PlanningException(String.format("Cannot get the field \"%s\" at node (%d)",
-                c, projectable.getPID()));
-          }
-        }
+
+      if (groupbyNode.hasAggFunctions()) {
+        verifyIfEvalNodesCanBeEvaluated(projectable, groupbyNode.getAggFunctions());
       }
+
     } else if (projectable instanceof WindowAggNode) {
       WindowAggNode windowAggNode = (WindowAggNode) projectable;
-      if (windowAggNode.hasAggFunctions()) {
-        for (AggregationFunctionCallEval f : windowAggNode.getWindowFunctions()) {
-          Set<Column> columns = EvalTreeUtil.findUniqueColumns(f);
-          for (Column c : columns) {
-            if (!projectable.getInSchema().contains(c)) {
-              throw new PlanningException(String.format("Cannot get the field \"%s\" at node (%d)",
-                  c, projectable.getPID()));
-            }
-          }
-        }
+
+      if (windowAggNode.hasPartitionKeys()) {
+        verifyIfColumnCanBeEvaluated(projectable.getInSchema(), projectable, windowAggNode.getPartitionKeys());
       }
-    } else {
-      for (Target target : projectable.getTargets()) {
+
+      if (windowAggNode.hasAggFunctions()) {
+        verifyIfEvalNodesCanBeEvaluated(projectable, windowAggNode.getWindowFunctions());
+      }
+
+      if (windowAggNode.hasSortSpecs()) {
+        Column [] sortKeys = PlannerUtil.sortSpecsToSchema(windowAggNode.getSortSpecs()).toArray();
+        verifyIfColumnCanBeEvaluated(projectable.getInSchema(), projectable, sortKeys);
+      }
+
+      // verify targets except for function slots
+      for (int i = 0; i < windowAggNode.getTargets().length - windowAggNode.getWindowFunctions().length; i++) {
+        Target target = windowAggNode.getTargets()[i];
         Set<Column> columns = EvalTreeUtil.findUniqueColumns(target.getEvalTree());
         for (Column c : columns) {
-          if (!projectable.getInSchema().contains(c)) {
-            throw new PlanningException(String.format("Cannot get the field \"%s\" at node (%d)",
-                c, projectable.getPID()));
+          if (!windowAggNode.getInSchema().contains(c)) {
+            throwCannotEvaluateException(projectable, c.getQualifiedName());
           }
         }
       }
+
+    } else if (projectable instanceof RelationNode) {
+      RelationNode relationNode = (RelationNode) projectable;
+      verifyIfTargetsCanBeEvaluated(relationNode.getTableSchema(), (Projectable) relationNode);
+
+    } else {
+      verifyIfTargetsCanBeEvaluated(projectable.getInSchema(), projectable);
+    }
+  }
+
+  public static void verifyIfEvalNodesCanBeEvaluated(Projectable projectable, EvalNode[] evalNodes)
+      throws PlanningException {
+    for (EvalNode e : evalNodes) {
+      Set<Column> columns = EvalTreeUtil.findUniqueColumns(e);
+      for (Column c : columns) {
+        if (!projectable.getInSchema().contains(c)) {
+          throwCannotEvaluateException(projectable, c.getQualifiedName());
+        }
+      }
+    }
+  }
+
+  public static void verifyIfTargetsCanBeEvaluated(Schema baseSchema, Projectable projectable)
+      throws PlanningException {
+    for (Target target : projectable.getTargets()) {
+      Set<Column> columns = EvalTreeUtil.findUniqueColumns(target.getEvalTree());
+      for (Column c : columns) {
+        if (!baseSchema.contains(c)) {
+          throwCannotEvaluateException(projectable, c.getQualifiedName());
+        }
+      }
+    }
+  }
+
+  public static void verifyIfColumnCanBeEvaluated(Schema baseSchema, Projectable projectable, Column [] columns)
+      throws PlanningException {
+    for (Column c : columns) {
+      if (!baseSchema.contains(c)) {
+        throwCannotEvaluateException(projectable, c.getQualifiedName());
+      }
+    }
+  }
+
+  public static void throwCannotEvaluateException(Projectable projectable, String columnName) throws PlanningException {
+    if (projectable instanceof UnaryNode && ((UnaryNode) projectable).getChild().getType() == NodeType.GROUP_BY) {
+      throw new PlanningException(columnName
+          + " must appear in the GROUP BY clause or be used in an aggregate function at node ("
+          + projectable.getPID() + ")");
+    } else {
+      throw new PlanningException(String.format("Cannot evaluate the field \"%s\" at node (%d)",
+          columnName, projectable.getPID()));
     }
   }
 
@@ -511,11 +553,12 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
 
     List<String> winFuncRefs = new ArrayList<String>();
     List<WindowFunctionEval> winFuncs = new ArrayList<WindowFunctionEval>();
-    List<WindowSpecExpr> rawWindowSpecs = Lists.newArrayList();
+    List<WindowSpec> rawWindowSpecs = Lists.newArrayList();
     for (Iterator<NamedExpr> it = block.namedExprsMgr.getIteratorForUnevaluatedExprs(); it.hasNext();) {
       NamedExpr rawTarget = it.next();
       try {
-        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr(),
+            NameResolvingMode.SUBEXPRS_AND_RELS);
         if (evalNode.getType() == EvalType.WINDOW_FUNCTION) {
           winFuncRefs.add(rawTarget.getAlias());
           winFuncs.add((WindowFunctionEval) evalNode);
@@ -545,7 +588,7 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     SortSpec [][] sortGroups = new SortSpec[rawWindowSpecs.size()][];
 
     for (int winSpecIdx = 0; winSpecIdx < rawWindowSpecs.size(); winSpecIdx++) {
-      WindowSpecExpr spec = rawWindowSpecs.get(winSpecIdx);
+      WindowSpec spec = rawWindowSpecs.get(winSpecIdx);
       if (spec.hasOrderBy()) {
         Sort.SortSpec [] sortSpecs = spec.getSortSpecs();
         int sortNum = sortSpecs.length;
@@ -638,8 +681,10 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     for (Iterator<NamedExpr> it = block.namedExprsMgr.getIteratorForUnevaluatedExprs(); it.hasNext();) {
       NamedExpr rawTarget = it.next();
       try {
+        // check if at least distinct aggregation function
         includeDistinctFunction |= PlannerUtil.existsDistinctAggregationFunction(rawTarget.getExpr());
-        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr(),
+            NameResolvingMode.SUBEXPRS_AND_RELS);
         if (evalNode.getType() == EvalType.AGG_FUNCTION) {
           aggEvalNames.add(rawTarget.getAlias());
           aggEvals.add((AggregationFunctionCallEval) evalNode);
@@ -658,6 +703,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     // this inserted group-by node doesn't pass through preprocessor. So manually added.
     block.registerNode(groupbyNode);
     postHook(context, stack, null, groupbyNode);
+
+    verifyProjectedFields(block, groupbyNode);
     return groupbyNode;
   }
 
@@ -671,7 +718,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     EvalNode firstFetNum;
     LogicalNode child;
     if (limit.getFetchFirstNum().getType() == OpType.Literal) {
-      firstFetNum = exprAnnotator.createEvalNode(context.plan, block, limit.getFetchFirstNum());
+      firstFetNum = exprAnnotator.createEvalNode(context.plan, block, limit.getFetchFirstNum(),
+          NameResolvingMode.RELS_ONLY);
 
       ////////////////////////////////////////////////////////
       // Visit and Build Child Plan
@@ -698,7 +746,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
         firstFetNum = block.namedExprsMgr.getTarget(referName).getEvalTree();
       } else {
         NamedExpr namedExpr = block.namedExprsMgr.getNamedExpr(referName);
-        firstFetNum = exprAnnotator.createEvalNode(context.plan, block, namedExpr.getExpr());
+        firstFetNum = exprAnnotator.createEvalNode(context.plan, block, namedExpr.getExpr(),
+            NameResolvingMode.SUBEXPRS_AND_RELS);
         block.namedExprsMgr.markAsEvaluated(referName, firstFetNum);
       }
     }
@@ -794,7 +843,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
       havingCondition = block.namedExprsMgr.getTarget(referName).getEvalTree();
     } else {
       NamedExpr namedExpr = block.namedExprsMgr.getNamedExpr(referName);
-      havingCondition = exprAnnotator.createEvalNode(context.plan, block, namedExpr.getExpr());
+      havingCondition = exprAnnotator.createEvalNode(context.plan, block, namedExpr.getExpr(),
+          NameResolvingMode.SUBEXPRS_AND_RELS);
       block.namedExprsMgr.markAsEvaluated(referName, havingCondition);
     }
 
@@ -861,7 +911,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
       NamedExpr namedExpr = iterator.next();
       try {
         includeDistinctFunction |= PlannerUtil.existsDistinctAggregationFunction(namedExpr.getExpr());
-        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, namedExpr.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, namedExpr.getExpr(),
+            NameResolvingMode.SUBEXPRS_AND_RELS);
         if (evalNode.getType() == EvalType.AGG_FUNCTION) {
           block.namedExprsMgr.markAsEvaluated(namedExpr.getAlias(), evalNode);
           aggEvalNames.add(namedExpr.getAlias());
@@ -947,7 +998,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     selectionNode.setOutSchema(child.getOutSchema());
 
     // Create EvalNode for a search condition.
-    EvalNode searchCondition = exprAnnotator.createEvalNode(context.plan, block, selection.getQual());
+    EvalNode searchCondition = exprAnnotator.createEvalNode(context.plan, block, selection.getQual(),
+        NameResolvingMode.RELS_AND_SUBEXPRS);
     EvalNode simplified = AlgebraicUtil.eliminateConstantExprs(searchCondition);
     // set selection condition
     selectionNode.setQual(simplified);
@@ -1000,7 +1052,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     // Create EvalNode for a search condition.
     EvalNode joinCondition = null;
     if (join.hasQual()) {
-      EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, block, join.getQual());
+      EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, block, join.getQual(),
+          NameResolvingMode.LEGACY);
       joinCondition = AlgebraicUtil.eliminateConstantExprs(evalNode);
     }
 
@@ -1030,7 +1083,7 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     for (Iterator<NamedExpr> it = block.namedExprsMgr.getIteratorForUnevaluatedExprs(); it.hasNext();) {
       NamedExpr namedExpr = it.next();
       try {
-        evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr());
+        evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr(), NameResolvingMode.LEGACY);
         if (LogicalPlanner.checkIfBeEvaluatedAtJoin(block, evalNode, joinNode, stack.peek().getType() != OpType.Join)) {
           block.namedExprsMgr.markAsEvaluated(namedExpr.getAlias(), evalNode);
           newlyEvaluatedExprs.add(namedExpr.getAlias());
@@ -1102,7 +1155,7 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     for (Iterator<NamedExpr> it = block.namedExprsMgr.getIteratorForUnevaluatedExprs(); it.hasNext();) {
       NamedExpr namedExpr = it.next();
       try {
-        evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr());
+        evalNode = exprAnnotator.createEvalNode(plan, block, namedExpr.getExpr(), NameResolvingMode.LEGACY);
         if (EvalTreeUtil.findDistinctAggFunction(evalNode).size() == 0) {
           block.namedExprsMgr.markAsEvaluated(namedExpr.getAlias(), evalNode);
           newlyEvaluatedExprs.add(namedExpr.getAlias());
@@ -1154,7 +1207,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     for (Iterator<NamedExpr> iterator = block.namedExprsMgr.getIteratorForUnevaluatedExprs(); iterator.hasNext();) {
       NamedExpr rawTarget = iterator.next();
       try {
-        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr(),
+            NameResolvingMode.RELS_ONLY);
         if (checkIfBeEvaluatedAtRelation(block, evalNode, scanNode)) {
           block.namedExprsMgr.markAsEvaluated(rawTarget.getAlias(), evalNode);
           newlyEvaluatedExprsReferences.add(rawTarget.getAlias()); // newly added exr
@@ -1169,8 +1223,9 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     // The fact the some expr is included in newlyEvaluatedExprsReferences means that it is already evaluated.
     // So, we get a raw expression and then creates a target.
     for (String reference : newlyEvaluatedExprsReferences) {
-      NamedExpr refrrer = block.namedExprsMgr.getNamedExpr(reference);
-      EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, block, refrrer.getExpr());
+      NamedExpr refrer = block.namedExprsMgr.getNamedExpr(reference);
+      EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, block, refrer.getExpr(),
+          NameResolvingMode.RELS_ONLY);
       targets.add(new Target(evalNode, reference));
     }
 
@@ -1228,7 +1283,8 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     Set<String> newlyEvaluatedExprs = TUtil.newHashSet();
     for (NamedExpr rawTarget : block.namedExprsMgr.getAllNamedExprs()) {
       try {
-        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr());
+        EvalNode evalNode = exprAnnotator.createEvalNode(context.plan, context.queryBlock, rawTarget.getExpr(),
+            NameResolvingMode.RELS_ONLY);
         if (checkIfBeEvaluatedAtRelation(block, evalNode, subQueryNode)) {
           block.namedExprsMgr.markAsEvaluated(rawTarget.getAlias(), evalNode);
           newlyEvaluatedExprs.add(rawTarget.getAlias()); // newly added exr
@@ -1838,6 +1894,10 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
       return false;
     }
 
+    if (EvalTreeUtil.findEvalsByType(evalNode, EvalType.WINDOW_FUNCTION).size() > 0) {
+      return false;
+    }
+
     if (columnRefs.size() > 0 && !node.getInSchema().containsAll(columnRefs)) {
       return false;
     }
@@ -1878,6 +1938,7 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
       return false;
     }
 
+    // aggregation functions cannot be evaluated in scan node
     if (EvalTreeUtil.findEvalsByType(evalNode, EvalType.WINDOW_FUNCTION).size() > 0) {
       return false;
     }

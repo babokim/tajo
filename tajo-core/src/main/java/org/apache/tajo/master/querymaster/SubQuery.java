@@ -527,179 +527,11 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
   private TableStats[] computeStatFromTasks() {
     List<TableStats> inputStatsList = Lists.newArrayList();
     List<TableStats> resultStatsList = Lists.newArrayList();
-    LOG.info("==================================");
-
-    int i = 0;
     for (QueryUnit unit : getQueryUnits()) {
       resultStatsList.add(unit.getStats());
       if (unit.getLastAttempt().getInputStats() != null) {
         inputStatsList.add(unit.getLastAttempt().getInputStats());
       }
-
-      //--------------------- DEBUG START ------------------------//
-      if (i > 0) {
-        // Compare InputStats
-        TableStats stats1 = inputStatsList.get(i-1);
-        TableStats stats2 = unit.getLastAttempt().getInputStats();
-
-        if (stats1.getColumnStats().size() > 0 && stats2.getColumnStats().size() > 0) {
-          if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
-            LOG.error("## InputStats: ColumnSize mismatch ### "
-                + ", i:" + i
-                + ", blockId:" + getId()
-                + ", queryUnitId:" + unit.getId()
-                + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
-                + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
-                + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
-                + ", ScanNodes:" + unit.getScanNodes().length
-                + ", previousColumSize:" + stats1.getColumnStats().size()
-                + ", currentColumSize:" + stats2.getColumnStats().size()
-                + ", channelColumnSize:" + getDataChannel().getSchema().getColumns().size()
-            );
-
-            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
-              ColumnStats column = stats1.getColumnStats().get(j);
-              LOG.error("## InputStats: Previous QueryUnit ### "
-                  + ", i:" + i
-                  + ", j:" + j
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
-                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
-                  + ", column" + column.getColumn().toJson()
-              );
-            }
-
-            for (int j = 0; j < stats2.getColumnStats().size(); j++) {
-              ColumnStats column = stats2.getColumnStats().get(j);
-              LOG.error("## InputStats: Current QueryUnit ### "
-                  + ", i:" + i
-                  + ", j:" + j
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + unit.getId()
-                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
-                  + ", column" + column.getColumn().toJson()
-              );
-            }
-
-            abort(SubQueryState.ERROR);
-          } else {
-            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
-              ColumnStats column1 = stats1.getColumnStats().get(j);
-              if (!column1.getColumn().getDataType().equals(stats2.getColumnStats().get(j)
-                  .getColumn().getDataType())) {
-                LOG.error("## InputStats: ColumnType mismatch ### "
-                    + ", i:" + i
-                    + ", j:" + j
-                    + ", blockId:" + getId()
-                    + ", queryUnitId:" + unit.getId()
-                    + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
-                    + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
-                    + ", ScanNodes:" + unit.getScanNodes().length
-                    + ", newColumn" + column1.getColumn().toJson()
-                    + ", oldColumn" + stats2.getColumnStats().get(j).getColumn().toJson()
-                );
-                abort(SubQueryState.ERROR);
-              }
-            }
-          }
-        }
-
-        // Compare ResultStats
-        stats1 = resultStatsList.get(i - 1);
-        stats2 = unit.getStats();
-
-        if (stats1.getColumnStats().size() > 0 && stats2.getColumnStats().size() > 0) {
-          if (stats1.getColumnStats().size() != stats2.getColumnStats().size()) {
-            LOG.error("## ResultStats: ColumnSize mismatch ### "
-                + "i:" + i
-                + ", blockId:" + getId()
-                + ", queryUnitId:" + unit.getId()
-                + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
-                + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
-                + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
-                + ", ScanNodes:" + unit.getScanNodes().length
-                + ", previousColumSize:" + stats1.getColumnStats().size()
-                + ", currentColumSize:" + stats2.getColumnStats().size()
-                + ", channelColumnSize:" + getDataChannel().getSchema().getColumns().size()
-            );
-
-
-            for (ScanNode scan : unit.getScanNodes()) {
-              LOG.error("## ResultStats: currentScanNode ### "
-                  + "i:" + i
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + unit.getId()
-                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
-                  + ", tableName:" + scan.getTableName()
-                  + ", inputColumns:" + scan.getInSchema().getColumns().size()
-                  + ", outputColumns:" + scan.getOutSchema().getColumns().size()
-                  + ", qual:" + scan.getQual().toJson()
-              );
-            }
-
-            for (ScanNode scan : getQueryUnits()[i-1].getScanNodes()) {
-              LOG.error("## ResultStats: previousScanNode ### "
-                  + "i:" + i
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
-                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
-                  + ", tableName:" + scan.getTableName()
-                  + ", inputColumns:" + scan.getInSchema().getColumns().size()
-                  + ", outputColumns:" + scan.getOutSchema().getColumns().size()
-                  + ", qual:" + scan.getQual().toJson()
-              );
-            }
-
-            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
-              ColumnStats column = stats1.getColumnStats().get(j);
-              LOG.error("## ResultStats: Previous QueryUnit ### "
-                  + ", i:" + i
-                  + ", j:" + j
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + getQueryUnits()[i-1].getId()
-                  + ", lastQueryUnitAttemptId:" + getQueryUnits()[i-1].getLastAttempt().getId()
-                  + ", column" + column.getColumn().toJson()
-              );
-            }
-
-            for (int j = 0; j < stats2.getColumnStats().size(); j++) {
-              ColumnStats column = stats2.getColumnStats().get(j);
-              LOG.error("## ResultStats: Current QueryUnit ### "
-                  + ", i:" + i
-                  + ", j:" + j
-                  + ", blockId:" + getId()
-                  + ", queryUnitId:" + unit.getId()
-                  + ", lastQueryUnitAttemptId:" + unit.getLastAttempt().getId()
-                  + ", column" + column.getColumn().toJson()
-              );
-            }
-
-            abort(SubQueryState.ERROR);
-          } else {
-            for (int j = 0; j < stats1.getColumnStats().size(); j++) {
-              ColumnStats column = stats1.getColumnStats().get(j);
-              if (!column.getColumn().getDataType().equals(stats2.getColumnStats().get(j)
-                  .getColumn().getDataType())) {
-                LOG.error("## ResultStats: ColumnType mismatch ### "
-                    + ", i:" + i
-                    + ", j:" + j
-                    + ", blockId:" + getId()
-                    + ", queryUnitId:" + unit.getId()
-                    + ", ShuffleOutpuNum:" + unit.getShuffleOutpuNum()
-                    + ", TotalFragmentNum:" + unit.getTotalFragmentNum()
-                    + ", ScanNodes:" + unit.getScanNodes().length
-                    + ", newColumn" + column.getColumn().toJson()
-                    + ", oldColumn" + stats2.getColumnStats().get(j).getColumn().toJson()
-                );
-                abort(SubQueryState.ERROR);
-              }
-            }
-          }
-        }
-      }
-
-      i++;
-      //--------------------- DEBUG END ------------------------//
     }
 
     try {
@@ -915,12 +747,12 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         int taskNum = (int) Math.ceil((double) mb /
             QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME));
 
-//        int totalMem = getClusterTotalMemory(subQuery);
-//        LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
-//        int slots = Math.max(totalMem /  QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TASK_DEFAULT_MEMORY), 1);
-//
-//        // determine the number of task
-//        taskNum = Math.min(taskNum, slots);
+        int totalMem = getClusterTotalMemory(subQuery);
+        LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
+        int slots = Math.max(totalMem /  QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TASK_DEFAULT_MEMORY), 1);
+
+        // determine the number of task
+        taskNum = Math.min(taskNum, slots);
 
         if ( QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TESTCASE_MIN_TASK_NUM) > 0) {
           taskNum = QueryContext.getIntVar(subQuery.getContext().getQueryContext(), conf, ConfVars.TESTCASE_MIN_TASK_NUM);
@@ -934,19 +766,17 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         for (DataChannel eachChannel : masterPlan.getOutgoingChannels(outer.getId())) {
           outerShuffleOutputNum = Math.max(outerShuffleOutputNum, eachChannel.getShuffleOutputNum());
         }
-
         for (DataChannel eachChannel : masterPlan.getOutgoingChannels(inner.getId())) {
           innerShuffleOutputNum = Math.max(innerShuffleOutputNum, eachChannel.getShuffleOutputNum());
         }
-
         if (outerShuffleOutputNum != innerShuffleOutputNum
             && taskNum != outerShuffleOutputNum
             && taskNum != innerShuffleOutputNum) {
+          LOG.info(subQuery.getId() + ", Change determined number of join partitions cause difference of outputNum" +
+                  ", originTaskNum=" + taskNum + ", changedTaskNum=" + Math.max(outerShuffleOutputNum, innerShuffleOutputNum) +
+                  ", outerShuffleOutptNum=" + outerShuffleOutputNum +
+                  ", innerShuffleOutputNum=" + innerShuffleOutputNum);
           taskNum = Math.max(outerShuffleOutputNum, innerShuffleOutputNum);
-          LOG.info(subQuery.getId() + ", Change determined number of join partitions cause difference of outputNum, " +
-              "taskNum=" + taskNum + ", " +
-              "outerShuffleOutptNum=" + outerShuffleOutputNum + ", " +
-              "innerShuffleOutputNum=" + innerShuffleOutputNum);
         }
 
         LOG.info(subQuery.getId() + ", The determined number of join partitions is " + taskNum);

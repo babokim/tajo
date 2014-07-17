@@ -294,6 +294,8 @@ public class TajoWorkerResourceManager extends CompositeService implements Worke
 
         } catch (InterruptedException ie) {
           LOG.error(ie);
+        } catch (Throwable t) {
+          LOG.error(t);
         }
       }
     }

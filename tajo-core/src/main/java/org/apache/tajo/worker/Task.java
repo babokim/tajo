@@ -41,7 +41,6 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.json.CoreGsonHelper;
 import org.apache.tajo.engine.planner.PlannerUtil;
 import org.apache.tajo.engine.planner.logical.*;
-import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.planner.physical.PhysicalExec;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.engine.query.QueryUnitRequest;
@@ -87,7 +86,6 @@ public class Task {
   private boolean interQuery;
   private boolean killed = false;
   private boolean aborted = false;
-  private boolean stopped = false;
   private final Reporter reporter;
   private Path inputTableBaseDir;
 
@@ -214,22 +212,6 @@ public class Task {
     if(LOG.isDebugEnabled()) {
       LOG.debug("* plan:\n");
       LOG.debug(plan.toString());
-    }
-    for (String str : context.getInputTables()) {
-      LOG.info("* InputTableName:" + str);
-
-      LOG.info("* ShuffleBlockId:" + context.getDataChannel().getTargetId());
-      LOG.info("* ShuffleOutputNum:" + context.getDataChannel().getShuffleOutputNum());
-      LOG.info("* ShuffleSchemaColumns:" + context.getDataChannel().getSchema().getColumns().size());
-      LOG.info("* ShuffleKeys:" + context.getDataChannel().getShuffleKeys().length);
-
-      LOG.info("* inputStats - ColumnStatsSize:" + inputStats.getColumnStats().size());
-      LOG.info("* Plan - inColumns:" + plan.getInSchema().getColumns().size()
-          + ", outColumns:" + plan.getOutSchema().getColumns().size());
-
-
-      LOG.info("* plan:\n");
-      LOG.info(plan.toString());
     }
     LOG.info("==================================");
   }
@@ -401,6 +383,8 @@ public class Task {
     context.getFetchLatch().await();
     LOG.info(context.getTaskId() + " All fetches are done!");
     Collection<String> inputs = Lists.newArrayList(context.getInputTables());
+
+    // Get all broadcasted tables
     Set<String> broadcastTableNames = new HashSet<String>();
     List<EnforceProperty> broadcasts = context.getEnforcer().getEnforceProperties(EnforceType.BROADCAST);
     if (broadcasts != null) {
@@ -409,6 +393,7 @@ public class Task {
       }
     }
 
+    // localize the fetched data and skip the broadcast table
     for (String inputTable: inputs) {
       if (broadcastTableNames.contains(inputTable)) {
         continue;
@@ -449,7 +434,6 @@ public class Task {
       aborted = true;
     } finally {
       context.setProgress(1.0f);
-      stopped = true;
       taskRunnerContext.completedTasksNum.incrementAndGet();
 
       if (killed || aborted) {
@@ -614,23 +598,25 @@ public class Task {
   private class FetchRunner implements Runnable {
     private final TaskAttemptContext ctx;
     private final Fetcher fetcher;
+    private int maxRetryNum;
 
     public FetchRunner(TaskAttemptContext ctx, Fetcher fetcher) {
       this.ctx = ctx;
       this.fetcher = fetcher;
+      this.maxRetryNum = systemConf.getIntVar(TajoConf.ConfVars.SHUFFLE_FETCHER_READ_RETRY_MAX_NUM);
     }
 
     @Override
     public void run() {
       int retryNum = 0;
-      int maxRetryNum = 30;
-      int retryWaitTime = 1000;
+      int retryWaitTime = 1000; //sec
 
       try { // for releasing fetch latch
         while(!killed && retryNum < maxRetryNum) {
           if (retryNum > 0) {
             try {
               Thread.sleep(retryWaitTime);
+              retryWaitTime = Math.min(10 * 1000, retryWaitTime * 2);  // max 10 seconds
             } catch (InterruptedException e) {
               LOG.error(e);
             }
@@ -638,7 +624,7 @@ public class Task {
           }
           try {
             File fetched = fetcher.get();
-            if (fetched != null && fetcher.getState() == TajoProtos.FetcherState.FETCH_FINISHED) {
+            if (fetcher.getState() == TajoProtos.FetcherState.FETCH_FINISHED && fetched != null) {
               break;
             }
           } catch (IOException e) {
@@ -653,7 +639,7 @@ public class Task {
           if (retryNum == maxRetryNum) {
             LOG.error("ERROR: the maximum retry (" + retryNum + ") on the fetch exceeded (" + fetcher.getURI() + ")");
           }
-          aborted = true;
+          aborted = true; // retry queryUnit
           ctx.getFetchLatch().countDown();
         }
       }
@@ -747,7 +733,7 @@ public class Task {
         int remainingRetries = MAX_RETRIES;
         @Override
         public void run() {
-          while (!stop.get() && !stopped && !context.isStopped()) {
+          while (!stop.get() && !context.isStopped()) {
             try {
               if(executor != null && context.getProgress() < 1.0f) {
                 float progress = executor.getProgress();
@@ -772,7 +758,7 @@ public class Task {
                 throw new RuntimeException(t);
               }
             } finally {
-              if (!context.isStopped() &&remainingRetries > 0) {
+              if (!context.isStopped() && remainingRetries > 0) {
                 synchronized (pingThread) {
                   try {
                     pingThread.wait(PROGRESS_INTERVAL);

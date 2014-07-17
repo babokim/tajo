@@ -78,22 +78,6 @@ public class PartitionedTableRewriter implements RewriteRule {
   public LogicalPlan rewrite(LogicalPlan plan) throws PlanningException {
     LogicalPlan.QueryBlock rootBlock = plan.getRootBlock();
     rewriter.visit(rootBlock, plan, rootBlock, rootBlock.getRoot(), new Stack<LogicalNode>());
-
-//    boolean containsPartitionedTables;
-//    for (LogicalPlan.QueryBlock block : plan.getQueryBlocks()) {
-//      containsPartitionedTables = false;
-//      for (RelationNode relation : block.getRelations()) {
-//        if (relation.getType() == NodeType.SCAN) {
-//          TableDesc table = ((ScanNode)relation).getTableDesc();
-//          if (table.hasPartition()) {
-//            containsPartitionedTables = true;
-//          }
-//        }
-//      }
-//      if (containsPartitionedTables) {
-//        rewriter.visit(block, plan, block, block.getRoot(), new Stack<LogicalNode>());
-//      }
-//    }
     return plan;
   }
 

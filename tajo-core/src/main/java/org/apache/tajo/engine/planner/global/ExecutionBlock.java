@@ -34,7 +34,7 @@ public class ExecutionBlock {
   private List<ScanNode> scanlist = new ArrayList<ScanNode>();
   private Enforcer enforcer = new Enforcer();
 
-  //Real ScanNode's ExecutionBlockId -> Delegated ScanNode's ExecutionBlockId.
+  // Actual ScanNode's ExecutionBlockId -> Delegated ScanNode's ExecutionBlockId.
   private Map<ExecutionBlockId, ExecutionBlockId> unionScanMap = new HashMap<ExecutionBlockId, ExecutionBlockId>();
 
   private boolean hasJoinPlan;

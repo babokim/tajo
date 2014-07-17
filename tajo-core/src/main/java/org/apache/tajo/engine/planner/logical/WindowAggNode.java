@@ -18,6 +18,7 @@
 
 package org.apache.tajo.engine.planner.logical;
 
+import com.google.common.base.Objects;
 import com.google.gson.annotations.Expose;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.SortSpec;
@@ -36,7 +37,7 @@ public class WindowAggNode extends UnaryNode implements Projectable, Cloneable {
   /** Aggregation Functions */
   @Expose private WindowFunctionEval[] windowFuncs;
   /**
-   * It's a list of targets. The grouping columns should be followed by aggregation functions.
+   * It's a list of targets. The partition key columns should be followed by window functions.
    * aggrFunctions keep actual aggregation functions, but it only contains field references.
    * */
   @Expose private Target [] targets;
@@ -109,8 +110,7 @@ public class WindowAggNode extends UnaryNode implements Projectable, Cloneable {
   public void setChild(LogicalNode subNode) {
     super.setChild(subNode);
   }
-
-  @Override
+  
   public String toString() {
     StringBuilder sb = new StringBuilder("WinAgg (");
     if (hasPartitionKeys()) {
@@ -133,12 +133,19 @@ public class WindowAggNode extends UnaryNode implements Projectable, Cloneable {
       WindowAggNode other = (WindowAggNode) obj;
       boolean eq = super.equals(other);
       eq = eq && TUtil.checkEquals(partitionKeys, other.partitionKeys);
+      eq = eq && TUtil.checkEquals(sortSpecs, other.sortSpecs);
       eq = eq && TUtil.checkEquals(windowFuncs, other.windowFuncs);
       eq = eq && TUtil.checkEquals(targets, other.targets);
+      eq = eq && TUtil.checkEquals(hasDistinct, other.hasDistinct);
       return eq;
     } else {
       return false;  
     }
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(partitionKeys, sortSpecs, windowFuncs, targets, hasDistinct);
   }
   
   @Override

@@ -23,7 +23,9 @@ import org.apache.tajo.QueryTestCaseBase;
 import org.apache.tajo.TajoConstants;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.statistics.TableStats;
+import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.worker.TajoWorker;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
@@ -38,6 +40,11 @@ public class TestQueryUnitStatusUpdate extends QueryTestCaseBase {
 
   public TestQueryUnitStatusUpdate() {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
+  }
+
+  @BeforeClass
+  public static void setUp() throws Exception {
+    conf.set(TajoConf.ConfVars.DIST_QUERY_BROADCAST_JOIN_AUTO.varname, "false");
   }
 
   @Test

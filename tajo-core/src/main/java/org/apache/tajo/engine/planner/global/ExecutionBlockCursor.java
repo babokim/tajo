@@ -22,23 +22,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * A distributed execution plan (DEP) is a direct acyclic graph (DAG) of ExecutionBlocks.
  * This class is a pointer to an ExecutionBlock that the query engine should execute.
- * For each call of nextBlock(), it retrieves a next ExecutionBlock in a postfix order.
  */
 public class ExecutionBlockCursor {
   private MasterPlan masterPlan;
   private ArrayList<ExecutionBlock> orderedBlocks = new ArrayList<ExecutionBlock>();
   private int cursor = 0;
 
+  private List<BuildOrderItem> executionOrderedBlocks = new ArrayList<BuildOrderItem>();
+  private List<BuildOrderItem> notOrderedSiblingBlocks = new ArrayList<BuildOrderItem>();
+  private Map<ExecutionBlockId, AtomicInteger> orderRequiredChildCountMap = new HashMap<ExecutionBlockId, AtomicInteger>();
+
   public ExecutionBlockCursor(MasterPlan plan) {
     this(plan, false);
   }
 
-  public ExecutionBlockCursor(MasterPlan plan, boolean executionOrder) {
+  public ExecutionBlockCursor(MasterPlan plan, boolean siblingFirstOrder) {
     this.masterPlan = plan;
-    if (executionOrder) {
-      buildExecutionOrder(plan.getRoot());
+    if (siblingFirstOrder) {
+      buildSiblingFirstOrder(plan.getRoot());
     } else {
-      buildOrder(plan.getRoot());
+      buildDepthFirstOrder(plan.getRoot());
     }
   }
 
@@ -47,32 +50,42 @@ public class ExecutionBlockCursor {
   }
 
   // Add all execution blocks in a depth first and postfix order
-  private void buildOrder(ExecutionBlock current) {
+  private void buildDepthFirstOrder(ExecutionBlock current) {
     Stack<ExecutionBlock> stack = new Stack<ExecutionBlock>();
     if (!masterPlan.isLeaf(current.getId())) {
       for (ExecutionBlock execBlock : masterPlan.getChilds(current)) {
         if (!masterPlan.isLeaf(execBlock)) {
-          buildOrder(execBlock);
+          buildDepthFirstOrder(execBlock);
         } else {
           stack.push(execBlock);
         }
       }
       for (ExecutionBlock execBlock : stack) {
-        buildOrder(execBlock);
+        buildDepthFirstOrder(execBlock);
       }
     }
     orderedBlocks.add(current);
   }
 
-  List<BuildOrderItem> executionOrderedBlocks = new ArrayList<BuildOrderItem>();
-  List<BuildOrderItem> notOrderedSiblingBlocks = new ArrayList<BuildOrderItem>();
-  Map<ExecutionBlockId, AtomicInteger> orderRequiredChildCountMap = new HashMap<ExecutionBlockId, AtomicInteger>();
 
-  /**
-   *
-   * @param current
-   */
-  private void buildExecutionOrder(ExecutionBlock current) {
+  private void buildSiblingFirstOrder(ExecutionBlock current) {
+    /*
+     |-eb_1404887024677_0004_000007
+       |-eb_1404887024677_0004_000006
+          |-eb_1404887024677_0004_000005
+             |-eb_1404887024677_0004_000004
+                |-eb_1404887024677_0004_000003
+             |-eb_1404887024677_0004_000002
+                |-eb_1404887024677_0004_000001
+
+     In the case of the upper plan, buildDepthFirstOrder() makes the following order in a depth first and postfix order.
+       [eb_1, eb_2, eb_3, eb_4, eb_5, eb_6, eb_7]
+     The eb_2 doesn't know eb_3's output bytes and uses a size of eb_4's all scan nodes.
+
+     buildSiblingFirstOrder() makes the following order in a sibling order.
+       [eb_1, eb_3, eb_2, eb_4, eb_5, eb_6, eb_7]
+     In this order the eb_2 knows eb_3's output bytes and the eb_4 also knows eb_1's output bytes.
+     */
     preExecutionOrder(new BuildOrderItem(null, current));
 
     for (BuildOrderItem eachItem: executionOrderedBlocks) {

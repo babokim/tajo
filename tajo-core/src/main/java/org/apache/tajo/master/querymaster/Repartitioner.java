@@ -89,7 +89,6 @@ public class Repartitioner {
     for (int i = 0; i < scans.length; i++) {
       TableDesc tableDesc = masterContext.getTableDescMap().get(scans[i].getCanonicalName());
       if (tableDesc == null) { // if it is a real table stored on storage
-        // TODO - to be fixed (wrong directory)
         tablePath = storageManager.getTablePath(scans[i].getTableName());
         if (execBlock.getUnionScanMap() != null && !execBlock.getUnionScanMap().isEmpty()) {
           for (Map.Entry<ExecutionBlockId, ExecutionBlockId> unionScanEntry: execBlock.getUnionScanMap().entrySet()) {
@@ -121,7 +120,7 @@ public class Repartitioner {
       }
     }
 
-    // If one of inner join tables has no input data, it should return zero rows.
+    // If one of inner join tables has no input data, it means that this execution block has no result row.
     JoinNode joinNode = PlannerUtil.findMostBottomNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
       if ( (joinNode.getJoinType() == JoinType.INNER)) {
@@ -137,20 +136,20 @@ public class Repartitioner {
         }
       }
     }
+
     // If node is outer join and a preserved relation is empty, it should return zero rows.
     joinNode = PlannerUtil.findTopNode(execBlock.getPlan(), NodeType.JOIN);
     if (joinNode != null) {
-      // all stats is zero, return
-      boolean allZero = true;
-      for (int i = 0 ; i < stats.length; i++) {
-        if (stats[i] != 0) {
-          allZero = false;
+      // If all stats are zero, return
+      boolean isEmptyAllJoinTables = true;
+      for (int i = 0; i < stats.length; i++) {
+        if (stats[i] > 0) {
+          isEmptyAllJoinTables = false;
           break;
         }
       }
-
-      if (allZero) {
-        LOG.info(execBlock.getId() + "'s input size is zero.");
+      if (isEmptyAllJoinTables) {
+        LOG.info("All input join tables are empty.");
         return;
       }
 
@@ -181,32 +180,40 @@ public class Repartitioner {
       }
     }
 
+    // Assigning either fragments or fetch urls to query units
     boolean isAllBroadcastTable = true;
     for (int i = 0; i < scans.length; i++) {
       if (!execBlock.isBroadcastTable(scans[i].getCanonicalName())) {
         isAllBroadcastTable = false;
+        break;
       }
     }
 
-    if (isAllBroadcastTable) {
+
+    if (isAllBroadcastTable) { // if all relations of this EB are broadcasted
       // set largest table to normal mode
       long maxStats = Long.MIN_VALUE;
       int maxStatsScanIdx = -1;
       for (int i = 0; i < scans.length; i++) {
         // finding largest table.
-        if (stats[i] > maxStats) {
+        // If stats == 0, can't be base table.
+        if (stats[i] > 0 && stats[i] > maxStats) {
           maxStats = stats[i];
           maxStatsScanIdx = i;
         }
       }
-
+      if (maxStatsScanIdx == -1) {
+        maxStatsScanIdx = 0;
+      }
       int baseScanIdx = maxStatsScanIdx;
       scans[baseScanIdx].setBroadcastTable(false);
       execBlock.removeBroadcastTable(scans[baseScanIdx].getCanonicalName());
       LOG.info(String.format("[Distributed Join Strategy] : Broadcast Join with all tables, base_table=%s, base_volume=%d",
           scans[baseScanIdx].getCanonicalName(), stats[baseScanIdx]));
       scheduleLeafTasksWithBroadcastTable(schedulerContext, subQuery, baseScanIdx, fragments);
-    } else if (!execBlock.getBroadcastTables().isEmpty()) {
+
+
+    } else if (!execBlock.getBroadcastTables().isEmpty()) { // If some relations of this EB are broadcasted
       boolean hasNonLeafNode = false;
       List<Integer> largeScanIndexList = new ArrayList<Integer>();
       List<Integer> broadcastIndexList = new ArrayList<Integer>();
@@ -226,12 +233,16 @@ public class Repartitioner {
           broadcastIndexList.add(i);
         } else {
           // finding largest table.
-          if (stats[i] > maxStats) {
+          if (stats[i] > 0 && stats[i] > maxStats) {
             maxStats = stats[i];
             maxStatsScanIdx = i;
           }
         }
       }
+      if (maxStatsScanIdx == -1) {
+        maxStatsScanIdx = 0;
+      }
+
       if (!hasNonLeafNode) {
         if (largeScanIndexList.size() > 1) {
           String largeTableNames = "";
@@ -402,10 +413,6 @@ public class Repartitioner {
                                                                           TableDesc table) throws IOException {
     List<FileFragment> fragments = Lists.newArrayList();
     PartitionedTableScanNode partitionsScan = (PartitionedTableScanNode) scan;
-
-    for (FileFragment eachFragment: sm.getSplits(
-        scan.getCanonicalName(), table.getMeta(), table.getSchema(), partitionsScan.getInputPaths())) {
-    }
     fragments.addAll(sm.getSplits(
         scan.getCanonicalName(), table.getMeta(), table.getSchema(), partitionsScan.getInputPaths()));
     partitionsScan.setInputPaths(null);
@@ -671,9 +678,6 @@ public class Repartitioner {
 
     for (ExecutionBlock block : masterPlan.getChilds(execBlock)) {
       List<IntermediateEntry> partitions = new ArrayList<IntermediateEntry>();
-
-      QueryUnit[] units = subQuery.getContext().getSubQuery(block.getId()).getQueryUnits();
-
       for (QueryUnit tasks : subQuery.getContext().getSubQuery(block.getId()).getQueryUnits()) {
         if (tasks.getIntermediateData() != null) {
           partitions.addAll(tasks.getIntermediateData());

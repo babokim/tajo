@@ -24,8 +24,6 @@ package org.apache.tajo.catalog.statistics;
 import com.google.common.base.Objects;
 import com.google.gson.Gson;
 import com.google.gson.annotations.Expose;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.json.GsonObject;
@@ -38,7 +36,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TableStats implements ProtoObject<TableStatsProto>, Cloneable, GsonObject {
-  private static final Log LOG = LogFactory.getLog(TableStats.class);
+  private TableStatsProto.Builder builder = TableStatsProto.newBuilder();
 
   @Expose private Long numRows = null; // required
   @Expose private Long numBytes = null; // required
@@ -180,7 +178,7 @@ public class TableStats implements ProtoObject<TableStatsProto>, Cloneable, Gson
 
   public Object clone() throws CloneNotSupportedException {
     TableStats stat = (TableStats) super.clone();
-
+    stat.builder = CatalogProtos.TableStatsProto.newBuilder();
     stat.numRows = numRows != null ? numRows : null;
     stat.numBytes = numBytes != null ? numBytes : null;
     stat.numBlocks = numBlocks != null ? numBlocks : null;
@@ -266,21 +264,5 @@ public class TableStats implements ProtoObject<TableStatsProto>, Cloneable, Gson
       }
     }
     return builder.build();
-  }
-
-  public void printColumnStats(String message) {
-    LOG.error("=====================================");
-    LOG.error(message);
-    if (columnStatses != null) {
-      int index = 0;
-      for (ColumnStats eachColumn: columnStatses) {
-        LOG.error(index + ": " + eachColumn.getColumn());
-        index++;
-      }
-    } else {
-      LOG.error("No column stats");
-    }
-    LOG.error("=====================================");
-
   }
 }

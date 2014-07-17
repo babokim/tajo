@@ -42,8 +42,8 @@ import java.util.*;
 public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
   // from logical plan
   protected JoinNode plan;
-  protected EvalNode joinQual;
-  protected EvalNode joinFilter;
+  protected EvalNode joinQual;   // ex) a.id = b.id
+  protected EvalNode joinFilter; // ex) a > 10
 
   protected List<Column[]> joinKeyPairs;
 
@@ -125,7 +125,6 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
     }
   }
 
-  int numReturnRows = 0;
   public Tuple next() throws IOException {
     if (first) {
       loadRightToHashTable();
@@ -169,17 +168,18 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
 
       frameTuple.set(leftTuple, rightTuple); // evaluate a join condition on both tuples
 
-      boolean satisfiedWithFilter = true;
-      if (joinFilter != null) {
-        satisfiedWithFilter = joinFilter.eval(inSchema, frameTuple).isTrue();
-      }
+      // if there is no join filter, it is always true.
+      boolean satisfiedWithFilter = joinFilter == null ? true : joinFilter.eval(inSchema, frameTuple).isTrue();
       boolean satisfiedWithJoinCondition = joinQual.eval(inSchema, frameTuple).isTrue();
 
-      if (satisfiedWithFilter && satisfiedWithJoinCondition) { // if both tuples are joinable
+      // if a composited tuple satisfies with both join filter and join condition
+      if (satisfiedWithFilter && satisfiedWithJoinCondition) {
         projector.eval(frameTuple, outTuple);
         return outTuple;
       } else {
 
+        // if join filter is satisfied, the left outer join (LOJ) operator should return the null padded tuple
+        // only once. Then, LOJ operator should take the next left tuple.
         if (!satisfiedWithFilter) {
           shouldGetLeftTuple = true;
         }
@@ -191,6 +191,7 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
         return outTuple;
       }
     }
+
     return outTuple;
   }
 
@@ -203,6 +204,7 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
       for (int i = 0; i < rightKeyList.length; i++) {
         keyTuple.put(i, tuple.get(rightKeyList[i]));
       }
+
       List<Tuple> newValue = tupleSlots.get(keyTuple);
       if (newValue != null) {
         newValue.add(tuple);

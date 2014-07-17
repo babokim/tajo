@@ -27,8 +27,8 @@ import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.client.QueryStatus;
-import org.apache.tajo.common.TajoDataTypes;
-import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.common.TajoDataTypes.Type;
+import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.engine.utils.test.ErrorInjectionRewriter;
 import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.storage.StorageConstants;
@@ -46,6 +46,14 @@ public class TestSelectQuery extends QueryTestCaseBase {
 
   public TestSelectQuery() {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
+  }
+
+  @Test
+  public final void testNonQualifiedNames() throws Exception {
+    // select l_orderkey, l_partkey from lineitem;
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
   }
 
   @Test
@@ -111,6 +119,25 @@ public class TestSelectQuery extends QueryTestCaseBase {
     assertResultSet(res);
     cleanupQuery(res);
   }
+
+  @Test
+  public final void testSelectColumnAliasExistingInRelation1() throws Exception {
+    // We intend that 'l_orderkey' in where clause points to "default.lineitem.l_orderkey"
+    // select (l_orderkey + l_orderkey) l_orderkey from lineitem where l_orderkey > 2;
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testSelectColumnAliasExistingInRelation2() throws Exception {
+    // We intend that 'l_orderkey' in orderby clause points to (-l_orderkey).
+    // select (-l_orderkey) as l_orderkey from lineitem order by l_orderkey;
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
 
   @Test
   public final void testSelectSameConstantsWithDifferentAliases() throws Exception {
@@ -400,13 +427,13 @@ public class TestSelectQuery extends QueryTestCaseBase {
     tableOptions.put(StorageConstants.CSVFILE_NULL, "\\\\N");
 
     Schema schema = new Schema();
-    schema.addColumn("id", TajoDataTypes.Type.INT4);
-    schema.addColumn("name", TajoDataTypes.Type.TEXT);
+    schema.addColumn("id", Type.INT4);
+    schema.addColumn("name", Type.TEXT);
     String[] data = new String[]{ "1|table11-1", "2|table11-2", "3|table11-3", "4|table11-4", "5|table11-5" };
     TajoTestingCluster.createTable("table11", schema, tableOptions, data, 2);
 
     try {
-      testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.TESTCASE_MIN_TASK_NUM.varname, "2");
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname, "2");
 
       ResultSet res = executeString("select concat(substr(to_char(now(),'yyyymmddhh24miss'), 1, 14), 'aaa'), sleep(1) from table11");
 
@@ -438,8 +465,8 @@ public class TestSelectQuery extends QueryTestCaseBase {
       }
       assertEquals(5, numRecords);
     } finally {
-      testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.TESTCASE_MIN_TASK_NUM.varname,
-          TajoConf.ConfVars.TESTCASE_MIN_TASK_NUM.defaultVal);
+      testingCluster.setAllTajoDaemonConfValue(ConfVars.TESTCASE_MIN_TASK_NUM.varname,
+          ConfVars.TESTCASE_MIN_TASK_NUM.defaultVal);
       executeString("DROP TABLE table11 PURGE");
     }
   }

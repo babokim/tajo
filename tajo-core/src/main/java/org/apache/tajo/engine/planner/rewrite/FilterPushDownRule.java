@@ -18,6 +18,7 @@
 
 package org.apache.tajo.engine.planner.rewrite;
 
+import com.google.common.collect.*;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.Lists;
@@ -466,7 +467,6 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
 
     context.setFiltersTobePushed(new HashSet<EvalNode>(transformedMap.keySet()));
     visit(context, plan, plan.getBlock(node.getSubQuery()));
-
     context.setToOrigin(transformedMap);
 
     return node;
@@ -538,7 +538,7 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
     }
 
     // If there is not matched node add SelectionNode and clear context.pushingDownFilters
-    if (qual != null) {
+    if (qual != null && LogicalPlanner.checkIfBeEvaluatedAtThis(qual, projectionNode)) {
       SelectionNode selectionNode = plan.createNode(SelectionNode.class);
       selectionNode.setInSchema(childNode.getOutSchema());
       selectionNode.setOutSchema(childNode.getOutSchema());
@@ -547,12 +547,27 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
 
       projectionNode.setChild(selectionNode);
       selectionNode.setChild(childNode);
+
+      // clean all remain filters because all conditions are merged into a qual
+      context.pushingDownFilters.clear();
     }
 
-    //notify all eval matched to upper
-    context.pushingDownFilters.clear();
+    // if there are remain filters, recover the original names and give back to the upper query block.
+    if (context.pushingDownFilters.size() > 0) {
+      ImmutableSet<EvalNode> copy = ImmutableSet.copyOf(context.pushingDownFilters);
+      context.pushingDownFilters.clear();
+      context.pushingDownFilters.addAll(reverseTransform(transformedMap, copy));
+    }
 
     return projectionNode;
+  }
+
+  private Collection<EvalNode> reverseTransform(BiMap<EvalNode, EvalNode> map, Set<EvalNode> remainFilters) {
+    Set<EvalNode> reversed = Sets.newHashSet();
+    for (EvalNode evalNode : remainFilters) {
+      reversed.add(map.get(evalNode));
+    }
+    return reversed;
   }
 
   private BiMap<EvalNode, EvalNode> findCanPushdownAndTransform(
@@ -754,6 +769,17 @@ public class FilterPushDownRule extends BasicLogicalPlanVisitor<FilterPushDownCo
 
     return aggrEvalOrigins;
   }
+
+  @Override
+  public LogicalNode visitWindowAgg(FilterPushDownContext context, LogicalPlan plan,
+                                  LogicalPlan.QueryBlock block, WindowAggNode winAggNode,
+                                  Stack<LogicalNode> stack) throws PlanningException {
+    stack.push(winAggNode);
+    super.visitWindowAgg(context, plan, block, winAggNode, stack);
+    stack.pop();
+    return winAggNode;
+  }
+
 
   @Override
   public LogicalNode visitGroupBy(FilterPushDownContext context, LogicalPlan plan,

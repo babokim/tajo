@@ -20,15 +20,11 @@ package org.apache.tajo.engine.eval;
 
 import com.google.common.base.Objects;
 import com.google.gson.annotations.Expose;
-import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.Schema;
-import org.apache.tajo.catalog.SortSpec;
 import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.util.TUtil;
-
-import static org.apache.tajo.algebra.WindowSpecExpr.*;
 
 public class WindowOverEval extends EvalNode implements Cloneable {
 

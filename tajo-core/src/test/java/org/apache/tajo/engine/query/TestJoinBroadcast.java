@@ -32,7 +32,6 @@ import org.apache.tajo.engine.planner.global.MasterPlan;
 import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.master.querymaster.QueryMasterTask;
-import org.apache.tajo.master.querymaster.SubQuery;
 import org.apache.tajo.storage.Appender;
 import org.apache.tajo.storage.StorageManagerFactory;
 import org.apache.tajo.storage.Tuple;
@@ -44,13 +43,9 @@ import org.junit.experimental.categories.Category;
 
 import java.io.File;
 import java.sql.ResultSet;
-import java.util.Collection;
-import java.util.Iterator;
 
 import static junit.framework.TestCase.*;
-import static junit.framework.TestCase.assertEquals;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.*;
-import static org.junit.Assert.assertFalse;
+import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
 import static org.junit.Assert.assertNotNull;
 
 @Category(IntegrationTest.class)
@@ -65,6 +60,7 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
 
     executeDDL("create_lineitem_large_ddl.sql", "lineitem_large");
     executeDDL("create_customer_large_ddl.sql", "customer_large");
+    executeDDL("create_orders_large_ddl.sql", "orders_large");
   }
 
   @Test
@@ -132,6 +128,15 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
 
   @Test
   public final void testLeftOuterJoin2() throws Exception {
+    // large, large, small, small
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testLeftOuterJoin3() throws Exception {
+    // large, large, small, large, small, small
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -398,24 +403,13 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     cleanupQuery(res);
   }
 
-  private Collection<SubQuery> getSubQueries(QueryId queryId) {
-    for (TajoWorker eachWorker: testingCluster.getTajoWorkers()) {
-      QueryMasterTask queryMasterTask = eachWorker.getWorkerContext().getQueryMaster().getQueryMasterTask(queryId, true);
-      if (queryMasterTask != null) {
-        return queryMasterTask.getQuery().getSubQueries();
-      }
-    }
-
-    fail("Can't find query from workers" + queryId);
-    return null;
-  }
   @Test
   public final void testBroadcastPartitionTable() throws Exception {
-    // https://issues.apache.org/jira/browse/TAJO-839
     // If all tables participate in the BROADCAST JOIN, there is some missing data.
     executeDDL("customer_partition_ddl.sql", null);
     ResultSet res = executeFile("insert_into_customer_partition.sql");
     res.close();
+
     createMultiFile("nation", 2, new TupleCreator() {
       public Tuple createTuple(String[] columnDatas) {
         return new VTuple(new Datum[]{
@@ -446,53 +440,30 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     executeString("DROP TABLE orders_multifile PURGE");
   }
 
-//  @Test
-//  public final void testBroadcastPartitionTable2() throws Exception {
-//    // small(partition), large(partition), small
-//    executeDDL("lineitem_large_partition_ddl.sql", null);
-//    executeDDL("customer_partition_ddl.sql", null);
-//
-//    executeFile("insert_into_customer_partition.sql").close();
-//    executeFile("insert_into_lineitem_large_partition.sql").close();
-//
-//    ResultSet res = executeString(
-//        "select * from customer_broad_parts a " +
-//            "left outer join lineitem_large_parts b on cast(a.c_name as INT4) = b.l_partkey and b.l_orderkey = 1 " +
-//            "left outer join orders c on b.l_suppkey = c.o_orderkey "  +
-//            "where a.c_custkey > 2"
-//    );
-//    assertResultSet(res);
-//    res.close();
-//
-//    executeString("DROP TABLE customer_broad_parts PURGE");
-//    executeString("DROP TABLE lineitem_large_parts PURGE");
-//  }
-
   @Test
-  public final void testInnerAndOuterWithEmpty() throws Exception {
-    executeDDL("customer_partition_ddl.sql", null);
-    executeFile("insert_into_customer_partition.sql").close();
+  public final void testBroadcastMultiColumnPartitionTable() throws Exception {
+    String tableName = CatalogUtil.normalizeIdentifier("testBroadcastMultiColumnPartitionTable");
+    ResultSet res = testBase.execute(
+        "create table " + tableName + " (col1 int4, col2 float4) partition by column(col3 text, col4 text) ");
+    res.close();
+    TajoTestingCluster cluster = testBase.getTestingCluster();
+    CatalogService catalog = cluster.getMaster().getCatalog();
+    assertTrue(catalog.existsTable(DEFAULT_DATABASE_NAME, tableName));
 
-    // outer join table is empty
-    ResultSet res = executeString(
-        "select a.l_orderkey, b.o_orderkey, c.c_custkey from lineitem a " +
-            "inner join orders b on a.l_orderkey = b.o_orderkey " +
-            "left outer join customer_broad_parts c on a.l_orderkey = c.c_custkey and c.c_custkey < 0"
-    );
-
-    String expected = "l_orderkey,o_orderkey,c_custkey\n" +
-        "-------------------------------\n" +
-        "1,1,null\n" +
-        "1,1,null\n" +
-        "2,2,null\n" +
-        "3,3,null\n" +
-        "3,3,null\n";
-
-    assertEquals(expected, resultSetToString(res));
+    res = executeString("insert overwrite into " + tableName
+        + " select o_orderkey, o_totalprice, substr(o_orderdate, 6, 2), substr(o_orderdate, 1, 4) from orders");
     res.close();
 
-    executeString("DROP TABLE customer_broad_parts PURGE").close();
+    res = executeString(
+        "select distinct a.col3 from " + tableName + " as a " +
+            "left outer join lineitem_large b " +
+            "on a.col1 = b.l_orderkey"
+    );
+
+    assertResultSet(res);
+    cleanupQuery(res);
   }
+
   @Test
   public final void testCasebyCase1() throws Exception {
     // Left outer join with a small table and a large partition table which not matched any partition path.
@@ -505,7 +476,7 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
             "partition by column(l_orderkey int4) ").close();
     TajoTestingCluster cluster = testBase.getTestingCluster();
     CatalogService catalog = cluster.getMaster().getCatalog();
-    assertTrue(catalog.existsTable(TajoConstants.DEFAULT_DATABASE_NAME, tableName));
+    assertTrue(catalog.existsTable(DEFAULT_DATABASE_NAME, tableName));
 
     executeString("insert overwrite into " + tableName +
         " select l_partkey, l_suppkey, l_linenumber, \n" +
@@ -532,6 +503,32 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     } finally {
       cleanupQuery(res);
     }
+  }
+
+  @Test
+  public final void testInnerAndOuterWithEmpty() throws Exception {
+    executeDDL("customer_partition_ddl.sql", null);
+    executeFile("insert_into_customer_partition.sql").close();
+
+    // outer join table is empty
+    ResultSet res = executeString(
+        "select a.l_orderkey, b.o_orderkey, c.c_custkey from lineitem a " +
+            "inner join orders b on a.l_orderkey = b.o_orderkey " +
+            "left outer join customer_broad_parts c on a.l_orderkey = c.c_custkey and c.c_custkey < 0"
+    );
+
+    String expected = "l_orderkey,o_orderkey,c_custkey\n" +
+        "-------------------------------\n" +
+        "1,1,null\n" +
+        "1,1,null\n" +
+        "2,2,null\n" +
+        "3,3,null\n" +
+        "3,3,null\n";
+
+    assertEquals(expected, resultSetToString(res));
+    res.close();
+
+    executeString("DROP TABLE customer_broad_parts PURGE").close();
   }
 
   static interface TupleCreator {
@@ -580,160 +577,4 @@ public class TestJoinBroadcast extends QueryTestCaseBase {
     appender.flush();
     appender.close();
   }
-
-//  @Test
-//  public void testAAA() throws Exception {
-//    String table1 =
-//        "CREATE TABLE td_sdp_ps_daily_sum (svc_mgmt_num INT8, net_cl_cd TEXT, package_id TEXT, " +
-//            "law_area_cd TEXT, lct_cl_cd TEXT, download_cnt INT8, data_upload_size INT8, " +
-//            "data_download_size INT8, data_use_tms FLOAT8, header_use_size INT8, oper_dt_hms TEXT) " +
-//            "PARTITION BY COLUMN(strd_dt TEXT, tm_rng_cd TEXT) ";
-//
-//    String table2 =
-//        "CREATE TABLE tm_d_sdp_law_area_cd (law_area_cd TEXT, law_pvc_cd TEXT, law_pvc_nm TEXT, " +
-//            "law_gun_gu_cd TEXT, law_gun_gu_nm TEXT, law_dong_cd TEXT, law_dong_nm TEXT, " +
-//            "law_ri_cd TEXT, law_ri_nm TEXT, oper_dt_hms TEXT)" ;
-//
-//    String table3 =
-//        "CREATE TABLE tm_f_sdp_app_use_line_anals (svc_mgmt_num INT8, indv_corp_cl_cd TEXT, " +
-//            "sex_cd TEXT, cust_age_cd TEXT, age_cl_cd TEXT, cust_typ_cd TEXT, eqp_mdl_cd TEXT," +
-//            "eqp_ser_num TEXT, eqp_mfact_cd TEXT, eqp_acqr_ym TEXT, eqp_acqr_dt TEXT, eqp_grp_cd TEXT, " +
-//            "eqp_net_cl_cd TEXT, new_chg_cl_cd TEXT, eqp_use_ym_cnt INT4, eqp_use_ym_rng_cd TEXT, " +
-//            "tmth_scrb_term_cl_cd TEXT, tday_scrb_term_yn TEXT, svc_subsc_ym TEXT, " +
-//            "svc_scrb_dt TEXT, scrb_req_rsn_cd TEXT, svc_scrb_term_yn TEXT, svc_gr_cd TEXT, " +
-//            "svc_term_ym TEXT, svc_term_dt TEXT, fee_prod_id TEXT, prod_grp_cd TEXT, " +
-//            "prod_grp_dtl_cd TEXT, prod_grp_knd_cd TEXT, prod_type_cd TEXT, prcpln_last_chg_mth TEXT, " +
-//            "prod_chg_cd TEXT, bas_ofr_data_qty INT8, pps_yn TEXT, equip_chg_day TEXT, equip_chg_yn TEXT, " +
-//            "mbr_3mth_use_yn TEXT, dom_cir_voice_call INT8, dom_cir_voice_use_tms INT8, " +
-//            "dom_cir_sms_call INT8, dom_cir_mms_call INT8, arpu INT8, arpu_amt_rng_cd TEXT, " +
-//            "data_exhst_qty_cd TEXT, data_exhst_qty INT8, data_exhst_yn TEXT, data_exhst_date TEXT, " +
-//            "data_over_qty INT8, tb_prod_cd TEXT, tb_prod_scrb_mth TEXT, tb_prod_term_mth TEXT, " +
-//            "seoul_area_act_yn TEXT, oper_dt_hms TEXT) " +
-//            "PARTITION BY COLUMN(strd_ym TEXT) ";
-//
-//    //small
-//    String table4 =
-//        "CREATE TABLE tm_d_sdp_ps_app_category (ps_app_group TEXT, package_id TEXT, app_nm TEXT, price FLOAT4, price_cd TEXT, oper_dt_hms TEXT) ";
-//
-//    //small(1.1 MB)
-//    String table5 =
-//        "CREATE TABLE tc_sdp_cldr_cd (cldr_cd TEXT, cldr_dt TEXT, lnr_dt TEXT, hday_yn TEXT, leapm_yn TEXT, optms_cd TEXT, dow_cd TEXT, oper_dt_hms TEXT)  ";
-//
-//    executeString(table1).close();
-//    executeString(table2).close();
-//    executeString(table3).close();
-//    executeString(table4).close();
-//    executeString(table5).close();
-//
-//    CatalogService catalog = testingCluster.getMaster().getCatalog();
-//    String[] tableNames = new String[]{"td_sdp_ps_daily_sum", "tm_d_sdp_law_area_cd", "tm_f_sdp_app_use_line_anals",
-//        "tm_d_sdp_ps_app_category", "tc_sdp_cldr_cd"};
-//    Path aaa = null;
-//    for (String eachTable: tableNames) {
-//      TableDesc tableDesc = catalog.getTableDesc(TajoConstants.DEFAULT_DATABASE_NAME, eachTable);
-//
-//      Path tablePath = tableDesc.getPath();
-//      FileSystem fs = tablePath.getFileSystem(conf);
-//      //fs.delete(tablePath, true);
-//      Path localPath = new Path("file:///Users/seungunchoe/Downloads/Tajo_Patch/babokim/data/" + eachTable);
-//      FileSystem localFs = FileSystem.getLocal(conf);
-//      for (FileStatus eachFile: localFs.listStatus(localPath)) {
-//        fs.copyFromLocalFile(eachFile.getPath(), tablePath);
-//      }
-//    }
-//
-//    ResultSet res = executeString(
-//        "select a.svc_mgmt_num                             AS svc_mgmt_num\n" +
-//            "       ,a.net_cl_cd                                AS net_cl_cd\n" +
-//            "       ,Coalesce(c.age_cl_cd, '##')                AS age_cl_cd\n" +
-//            "       ,Coalesce(Substr(c.equip_chg_day, 6), '##') AS eqp_chg_ym\n" +
-//            "       ,Coalesce(c.eqp_use_ym_cnt, 0)              AS eqp_use_ym\n" +
-//            "       ,Coalesce(c.eqp_use_ym_rng_cd, '##')        AS eqp_use_ym_rng_cd\n" +
-//            "       \n" +
-//            "       ,Substr(a.strd_dt, 1, 6)                    AS strd_ym\n" +
-//            "       ,a.strd_dt                                  AS strd_dt\n" +
-//            "       ,a.tm_rng_cd                                AS tm_rng_cd\n" +
-//            "FROM   td_sdp_ps_daily_sum a\n" +
-//            "      LEFT OUTER JOIN tm_d_sdp_law_area_cd b\n" +
-//            "                    ON a.law_area_cd = b.law_area_cd\n" +
-//            "       LEFT OUTER JOIN tm_f_sdp_app_use_line_anals c\n" +
-//            "                    ON c.strd_ym = '201404'\n" +
-//            "                       AND a.svc_mgmt_num = c.svc_mgmt_num\n" +
-//            "       LEFT OUTER JOIN tm_d_sdp_ps_app_category d\n" +
-//            "                    ON a.package_id = d.package_id\n" +
-//            "       LEFT OUTER JOIN tc_sdp_cldr_cd e\n" +
-//            "                    ON a.strd_dt = e.cldr_dt\n" +
-//            "                       AND e.cldr_cd = 'WKNO'"
-//    );
-//
-//    String expected =
-//        "svc_mgmt_num,net_cl_cd,age_cl_cd,eqp_chg_ym,eqp_use_ym,eqp_use_ym_rng_cd,strd_ym,strd_dt,tm_rng_cd\n" +
-//            "-------------------------------\n" +
-//            "7217690798,3G,07,231,22,10,201404,20140414,10\n" +
-//            "7217689641,3G,06,231,22,10,201404,20140414,10\n" +
-//            "7217690734,3G,05,231,22,10,201404,20140414,10\n" +
-//            "7217689641,3G,06,231,22,10,201404,20140414,10\n" +
-//            "7217691231,3G,07,231,22,10,201404,20140414,10\n" +
-//            "7217690465,3G,01,231,22,10,201404,20140414,10\n" +
-//            "7217689027,3G,07,231,22,10,201404,20140414,10\n" +
-//            "7217689366,3G,02,231,22,10,201404,20140414,10\n" +
-//            "7217689637,4G,05,107,15,07,201404,20140414,10\n" +
-//            "7217690798,3G,07,231,22,10,201404,20140414,10\n";
-//    assertEquals(expected, resultSetToString(res));
-//
-//    res.close();
-//  }
-//
-//  @Test
-//  public void testSort() throws Exception {
-//    executeString("create table vctaoz (dis_app_grp_nm	TEXT, appindex_grp_cd	TEXT, t50b30503744372	TEXT, seg_grp_cd	TEXT, " +
-//        "data_exhst_qty_cd1	TEXT, t50b307b3744373	INT8, t50b307c3744373	FLOAT8) " +
-//        "USING CSV WITH ('csvfile.null'='\\\\N', 'transient_lastDdlTime'='1402918396', 'csvfile.delimiter'='|')").close();
-//    executeString("CREATE TABLE tm_d_sdp_dis_app_grp_cd (" +
-//        "appindex_grp_cd TEXT, appindex_grp_nm TEXT, dis_app_grp_cd TEXT, dis_app_grp_nm TEXT, " +
-//        "sort_seq TEXT, oper_dt_hms TEXT) ").close();
-//
-//    executeString("CREATE  TABLE tc_sdp_dp_seg_grp_cd (" +
-//        "dp_seg_grp_cd TEXT, dp_seg_grp_nm TEXT, oper_dt_hms TEXT) ").close();
-//    executeString("CREATE  TABLE tc_sdp_data_exhst_qty_cd (" +
-//        "data_exhst_qty_cd TEXT, data_exhst_qty_nm TEXT, " +
-//        "sort_seq TEXT, oper_dt_hms TEXT) ").close();
-//
-//    CatalogService catalog = testingCluster.getMaster().getCatalog();
-//    String[] tableNames = new String[]{"vctaoz", "tm_d_sdp_dis_app_grp_cd", "tc_sdp_dp_seg_grp_cd", "tc_sdp_data_exhst_qty_cd"};
-//    Path aaa = null;
-//    for (String eachTable: tableNames) {
-//      TableDesc tableDesc = catalog.getTableDesc(TajoConstants.DEFAULT_DATABASE_NAME, eachTable);
-//
-//      Path tablePath = tableDesc.getPath();
-//      FileSystem fs = tablePath.getFileSystem(conf);
-//      //fs.delete(tablePath, true);
-//      Path localPath = new Path("file:///Users/seungunchoe/Downloads/Tajo_Patch/babokim/data/" + eachTable);
-//      FileSystem localFs = FileSystem.getLocal(conf);
-//      for (FileStatus eachFile: localFs.listStatus(localPath)) {
-//        fs.copyFromLocalFile(eachFile.getPath(), tablePath);
-//      }
-//    }
-//
-//    ResultSet res = executeString(
-//        "select count(*) from ("  +
-//        "SELECT  dp_seg_grp_cd, T50b30503744372\n" +
-//            "FROM vctaoz   \n" +
-//            "INNER JOIN \"tm_d_sdp_dis_app_grp_cd\" \"tm_d_sdp_dis_app_grp_cd1\" \n" +
-//            "    ON vctaoz.appindex_grp_cd = \"tm_d_sdp_dis_app_grp_cd1\".appindex_grp_cd \n" +
-//            "INNER JOIN \"tc_sdp_dp_seg_grp_cd\" \"tc_sdp_dp_seg_grp_cd3\" \n" +
-//            "    ON vctaoz.seg_grp_cd = \"tc_sdp_dp_seg_grp_cd3\".dp_seg_grp_cd \n" +
-//            "INNER JOIN \"tc_sdp_data_exhst_qty_cd\" \"tc_sdp_data_exhst_qty_cd4\" \n" +
-//            "    ON vctaoz.data_exhst_qty_cd1 = \"tc_sdp_data_exhst_qty_cd4\".data_exhst_qty_cd   \n" +
-//            "ORDER BY T50b30503744372, appindex_grp_nm) a"
-//    );
-//
-//    String expected = "?count\n" +
-//        "-------------------------------\n" +
-//        "329\n";
-//
-//    assertEquals(expected, resultSetToString(res));
-//
-//    res.close();
-//  }
 }

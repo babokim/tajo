@@ -573,17 +573,20 @@ public class TajoTestingCluster {
     }
     TajoConf conf = util.getConfiguration();
     TajoClient client = new TajoClient(conf);
-
-    FileSystem fs = util.getDefaultFileSystem();
-    Path rootDir = util.getMaster().
-        getStorageManager().getWarehouseDir();
-    fs.mkdirs(rootDir);
-    for (int i = 0; i < names.length; i++) {
-      createTable(names[i], schemas[i], tableOption, tables[i]);
+    try {
+      FileSystem fs = util.getDefaultFileSystem();
+      Path rootDir = util.getMaster().
+          getStorageManager().getWarehouseDir();
+      fs.mkdirs(rootDir);
+      for (int i = 0; i < names.length; i++) {
+        createTable(names[i], schemas[i], tableOption, tables[i]);
+      }
+      Thread.sleep(1000);
+      ResultSet res = client.executeQueryAndGetResult(query);
+      return res;
+    } finally {
+      client.close();
     }
-    Thread.sleep(1000);
-    ResultSet res = client.executeQueryAndGetResult(query);
-    return res;
   }
 
   public static void createTable(String tableName, Schema schema,
@@ -603,37 +606,40 @@ public class TajoTestingCluster {
     }
     TajoConf conf = util.getConfiguration();
     TajoClient client = new TajoClient(conf);
-
-    FileSystem fs = util.getDefaultFileSystem();
-    Path rootDir = util.getMaster().
-        getStorageManager().getWarehouseDir();
-    if (!fs.exists(rootDir)) {
-      fs.mkdirs(rootDir);
-    }
-    Path tablePath = new Path(rootDir, tableName);
-    fs.mkdirs(tablePath);
-    if (tableDatas.length > 0) {
-      int recordPerFile = tableDatas.length / numDataFiles;
-      if (recordPerFile == 0) {
-        recordPerFile = 1;
+    try {
+      FileSystem fs = util.getDefaultFileSystem();
+      Path rootDir = util.getMaster().
+          getStorageManager().getWarehouseDir();
+      if (!fs.exists(rootDir)) {
+        fs.mkdirs(rootDir);
       }
-      FSDataOutputStream out = null;
-      for (int j = 0; j < tableDatas.length; j++) {
-        if (out == null || j % recordPerFile == 0) {
-          if (out != null) {
-            out.close();
-          }
-          Path dfsPath = new Path(tablePath, tableName + j + ".tbl");
-          out = fs.create(dfsPath);
+      Path tablePath = new Path(rootDir, tableName);
+      fs.mkdirs(tablePath);
+      if (tableDatas.length > 0) {
+        int recordPerFile = tableDatas.length / numDataFiles;
+        if (recordPerFile == 0) {
+          recordPerFile = 1;
         }
-        out.write((tableDatas[j] + "\n").getBytes());
+        FSDataOutputStream out = null;
+        for (int j = 0; j < tableDatas.length; j++) {
+          if (out == null || j % recordPerFile == 0) {
+            if (out != null) {
+              out.close();
+            }
+            Path dfsPath = new Path(tablePath, tableName + j + ".tbl");
+            out = fs.create(dfsPath);
+          }
+          out.write((tableDatas[j] + "\n").getBytes());
+        }
+        if (out != null) {
+          out.close();
+        }
       }
-      if (out != null) {
-        out.close();
-      }
+      TableMeta meta = CatalogUtil.newTableMeta(CatalogProtos.StoreType.CSV, tableOption);
+      client.createExternalTable(tableName, schema, tablePath, meta);
+    } finally {
+      client.close();
     }
-    TableMeta meta = CatalogUtil.newTableMeta(CatalogProtos.StoreType.CSV, tableOption);
-    client.createExternalTable(tableName, schema, tablePath, meta);
   }
 
     /**

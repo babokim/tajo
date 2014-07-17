@@ -355,6 +355,7 @@ public class Query implements EventHandler<QueryEvent> {
 
     @Override
     public void transition(Query query, QueryEvent queryEvent) {
+
       query.setStartTime();
       SubQuery subQuery = new SubQuery(query.context, query.getPlan(),
           query.getExecutionBlockCursor().nextBlock(), query.sm);

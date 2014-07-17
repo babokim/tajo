@@ -114,6 +114,7 @@ public class DistinctGroupbyHashAggregationExec extends PhysicalExec {
     }
     if (first) {
       loadChildHashTable();
+
       progress = 0.5f;
       first = false;
     }
@@ -141,6 +142,8 @@ public class DistinctGroupbyHashAggregationExec extends PhysicalExec {
     //--------------------------------------------------------------------------------------
 
     List<List<Tuple>> tupleSlots = new ArrayList<List<Tuple>>();
+
+    // aggregation with single grouping key
     for (int i = 0; i < hashAggregators.length; i++) {
       if (!hashAggregators[i].iterator.hasNext()) {
         nullCount++;
@@ -159,7 +162,7 @@ public class DistinctGroupbyHashAggregationExec extends PhysicalExec {
       finished = true;
       progress = 1.0f;
 
-      // If DistinctGroupbyHashAggregationExec didn't has any rows,
+      // If DistinctGroupbyHashAggregationExec does not have any rows,
       // it should return NullDatum.
       if (totalNumRows == 0 && groupbyNodeNum == 0) {
         Tuple tuple = new VTuple(outputColumnNum);

@@ -18,6 +18,7 @@
 
 package org.apache.tajo.engine.query;
 
+import com.google.gson.annotations.Expose;
 import org.apache.tajo.QueryTestCaseBase;
 import org.apache.tajo.TajoConstants;
 import org.junit.Test;
@@ -134,32 +135,10 @@ public class TestCaseByCases extends QueryTestCaseBase {
     cleanupQuery(res);
   }
 
-
-//  @Test
-//  public final void testCase1() throws Exception {
-//    ResultSet res = executeString("select l_orderkey, '##' as col1, count(*) as cnt from lineitem join orders on l_orderkey = o_orderkey group by l_orderkey order by l_orderkey");
-//    String expected = "l_orderkey,col1,cnt\n" +
-//        "-------------------------------\n" +
-//        "1,##,2\n" +
-//        "2,##,1\n" +
-//        "3,##,2\n" ;
-//
-//
-//    assertEquals(expected, resultSetToString(res));
-//    cleanupQuery(res);
-//  }
-//
-//  @Test
-//  public final void testCase2() throws Exception {
-//    ResultSet res = executeString("select l_orderkey, '##' as col1, count(*) as cnt from lineitem join orders on l_orderkey = o_orderkey group by l_orderkey, col1 order by l_orderkey");
-//
-//    String expected = "l_orderkey,col1,cnt\n" +
-//        "-------------------------------\n" +
-//        "1,##,2\n" +
-//        "2,##,1\n" +
-//        "3,##,2\n" ;
-//
-//    assertEquals(expected, resultSetToString(res));
-//    cleanupQuery(res);
-//  }
+  @Test
+  public final void testTAJO917Case1() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
 }

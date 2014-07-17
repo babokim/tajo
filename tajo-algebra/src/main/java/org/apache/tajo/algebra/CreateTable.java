@@ -188,6 +188,9 @@ public class CreateTable extends Expr {
     createTable.tableName = tableName;
     if (tableElements != null) {
       createTable.tableElements = new ColumnDefinition[tableElements.length];
+      for (int i = 0; i < tableElements.length; i++) {
+        createTable.tableElements[i] = (ColumnDefinition) tableElements[i].clone();
+      }
     }
     createTable.storageType = storageType;
     createTable.location = location;

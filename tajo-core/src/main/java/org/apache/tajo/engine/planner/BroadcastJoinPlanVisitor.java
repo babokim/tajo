@@ -34,11 +34,11 @@ public class BroadcastJoinPlanVisitor extends BasicLogicalPlanVisitor<GlobalPlan
     LogicalNode rightChild = node.getRightChild();
 
     if (leftChild.getType() == NodeType.JOIN  && ScanNode.isScanNode(rightChild)) {
-      node.getRightBaseBroadcastCandidateTargets().add(node);
+      node.getBroadcastCandidateTargets().add(node);
     }
     LogicalNode parentNode = stack.peek();
     if (parentNode != null && parentNode.getType() == NodeType.JOIN) {
-      node.getRightBaseBroadcastCandidateTargets().addAll(((JoinNode)parentNode).getRightBaseBroadcastCandidateTargets());
+      node.getBroadcastCandidateTargets().addAll(((JoinNode)parentNode).getBroadcastCandidateTargets());
     }
 
     Stack<LogicalNode> currentStack = new Stack<LogicalNode>();

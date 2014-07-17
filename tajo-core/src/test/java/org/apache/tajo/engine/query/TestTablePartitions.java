@@ -32,9 +32,7 @@ import org.apache.tajo.TajoTestingCluster;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableDesc;
-import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.ipc.ClientProtos;
-import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.master.querymaster.QueryMasterTask;
 import org.apache.tajo.master.querymaster.SubQuery;
 import org.apache.tajo.worker.TajoWorker;
@@ -43,11 +41,9 @@ import org.junit.Test;
 import java.io.IOException;
 import java.sql.ResultSet;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.Map;
 
 import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.SCATTERED_HASH_SHUFFLE;
 import static org.junit.Assert.*;
 
 
@@ -260,12 +256,20 @@ public class TestTablePartitions extends QueryTestCaseBase {
       assertEquals(5, desc.getStats().getNumRows().intValue());
     }
 
+    String expected = "N\n" +
+        "N\n" +
+        "N\n" +
+        "R\n" +
+        "R\n";
+
+    String tableData = getTableFileContents(desc.getPath());
+    assertEquals(expected, tableData);
+
     res = executeString("select * from " + tableName + " where col2 = 2");
 
     Map<Double, int []> resultRows1 = Maps.newHashMap();
     resultRows1.put(45.0d, new int[]{3, 2});
     resultRows1.put(38.0d, new int[]{2, 2});
-
 
     for (int i = 0; i < 2; i++) {
       assertTrue(res.next());

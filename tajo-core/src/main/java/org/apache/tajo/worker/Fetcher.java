@@ -243,7 +243,7 @@ public class Fetcher {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e)
-      throws Exception {
+        throws Exception {
       LOG.error("Fetcher Error: ", e.getCause());
       ctx.getChannel().close();
     }

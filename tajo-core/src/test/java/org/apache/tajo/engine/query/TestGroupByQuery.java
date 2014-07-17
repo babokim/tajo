@@ -139,6 +139,23 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   }
 
   @Test
+  public final void testGroupByWithConstantKeys1() throws Exception {
+    // select 123 as key, count(1) as total from lineitem group by key order by key, total;
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testGroupByWithConstantKeys2() throws Exception {
+    // select l_partkey as a, timestamp '2014-07-07 04:28:31.561' as b, '##' as c, count(*) d from lineitem
+    // group by a, b, c order by l_partkey;
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
   public final void testDistinctAggregation1() throws Exception {
     // select l_orderkey, max(l_orderkey) as maximum, count(distinct l_linenumber) as unique_key from lineitem
     // group by l_orderkey;
@@ -224,43 +241,43 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregationCasebyCase() throws Exception {
     ResultSet res;
 
-//    // one groupby, distinct, aggregation
-//    res = executeFile("testDistinctAggregation_case1.sql");
-//    assertResultSet(res, "testDistinctAggregation_case1.result");
-//    res.close();
-//
-//    // one groupby, two distinct, one aggregation
-//    res = executeFile("testDistinctAggregation_case2.sql");
-//    assertResultSet(res, "testDistinctAggregation_case2.result");
-//    res.close();
-//
-//    // one groupby, two distinct, two aggregation(no alias)
-//    res = executeFile("testDistinctAggregation_case3.sql");
-//    assertResultSet(res, "testDistinctAggregation_case3.result");
-//    res.close();
-//
-//    // two groupby, two distinct, two aggregation
-//    res = executeFile("testDistinctAggregation_case4.sql");
-//    assertResultSet(res, "testDistinctAggregation_case4.result");
-//    res.close();
-//
-//    // two groupby, two distinct, two aggregation with subquery
-//    res = executeFile("testDistinctAggregation_case5.sql");
-//    assertResultSet(res, "testDistinctAggregation_case5.result");
-//    res.close();
-//
-//    res = executeFile("testDistinctAggregation_case6.sql");
-//    assertResultSet(res, "testDistinctAggregation_case6.result");
-//    res.close();
-//
-//    res = executeFile("testDistinctAggregation_case7.sql");
-//    assertResultSet(res, "testDistinctAggregation_case7.result");
-//    res.close();
-//
-//    res = executeFile("testDistinctAggregation_case8.sql");
-//    assertResultSet(res, "testDistinctAggregation_case8.result");
-//    res.close();
-//
+    // one groupby, distinct, aggregation
+    res = executeFile("testDistinctAggregation_case1.sql");
+    assertResultSet(res, "testDistinctAggregation_case1.result");
+    res.close();
+
+    // one groupby, two distinct, one aggregation
+    res = executeFile("testDistinctAggregation_case2.sql");
+    assertResultSet(res, "testDistinctAggregation_case2.result");
+    res.close();
+
+    // one groupby, two distinct, two aggregation(no alias)
+    res = executeFile("testDistinctAggregation_case3.sql");
+    assertResultSet(res, "testDistinctAggregation_case3.result");
+    res.close();
+
+    // two groupby, two distinct, two aggregation
+    res = executeFile("testDistinctAggregation_case4.sql");
+    assertResultSet(res, "testDistinctAggregation_case4.result");
+    res.close();
+
+    // two groupby, two distinct, two aggregation with subquery
+    res = executeFile("testDistinctAggregation_case5.sql");
+    assertResultSet(res, "testDistinctAggregation_case5.result");
+    res.close();
+
+    res = executeFile("testDistinctAggregation_case6.sql");
+    assertResultSet(res, "testDistinctAggregation_case6.result");
+    res.close();
+
+    res = executeFile("testDistinctAggregation_case7.sql");
+    assertResultSet(res, "testDistinctAggregation_case7.result");
+    res.close();
+
+    res = executeFile("testDistinctAggregation_case8.sql");
+    assertResultSet(res, "testDistinctAggregation_case8.result");
+    res.close();
+
     // case9
     KeyValueSet tableOptions = new KeyValueSet();
     tableOptions.put(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
@@ -286,7 +303,7 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
     assertEquals(expected, resultSetToString(res));
 
-    // multiple distinct with expression
+  // multiple distinct with expression
     res = executeString(
         "select count(distinct code) + count(distinct qty) from table10"
     );
@@ -308,6 +325,7 @@ public class TestGroupByQuery extends QueryTestCaseBase {
         "2,6\n";
 
     assertEquals(expected, resultSetToString(res));
+    res.close();
 
     executeString("DROP TABLE table10 PURGE").close();
   }
@@ -347,6 +365,7 @@ public class TestGroupByQuery extends QueryTestCaseBase {
     String expected = "col1,cnt1,cnt2\n" +
         "-------------------------------\n" +
         "a,3,1\n";
+
     assertEquals(expected, result);
 
     executeString("DROP TABLE table10 PURGE").close();

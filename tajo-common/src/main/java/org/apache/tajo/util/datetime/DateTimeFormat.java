@@ -596,6 +596,7 @@ public class DateTimeFormat {
     //TODO consider TimeZone
     doToTimestamp(dateText, formatText, tm);
 
+    // when we parse some date without day like '2014-04', we should set day to 1.
     if (tm.dayOfMonth == 0) {
       tm.dayOfMonth = 1;
     }

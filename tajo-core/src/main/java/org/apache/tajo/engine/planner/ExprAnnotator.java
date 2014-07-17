@@ -20,8 +20,6 @@ package org.apache.tajo.engine.planner;
 
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.algebra.*;
 import org.apache.tajo.catalog.CatalogService;
 import org.apache.tajo.catalog.CatalogUtil;
@@ -34,7 +32,8 @@ import org.apache.tajo.engine.eval.*;
 import org.apache.tajo.engine.function.AggFunction;
 import org.apache.tajo.engine.function.GeneralFunction;
 import org.apache.tajo.engine.planner.logical.NodeType;
-import org.apache.tajo.engine.planner.logical.WindowSpec;
+import org.apache.tajo.engine.planner.nameresolver.NameResolvingMode;
+import org.apache.tajo.engine.planner.nameresolver.NameResolver;
 import org.apache.tajo.exception.InternalException;
 import org.apache.tajo.util.Pair;
 import org.apache.tajo.util.TUtil;
@@ -45,9 +44,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 
-import static org.apache.tajo.algebra.WindowSpecExpr.WindowFrameEndBoundType;
-import static org.apache.tajo.algebra.WindowSpecExpr.WindowFrameStartBoundType;
-import static org.apache.tajo.algebra.WindowSpecExpr.WindowFrameUnit;
+import static org.apache.tajo.algebra.WindowSpec.WindowFrameEndBoundType;
+import static org.apache.tajo.algebra.WindowSpec.WindowFrameStartBoundType;
 import static org.apache.tajo.catalog.proto.CatalogProtos.FunctionType;
 import static org.apache.tajo.common.TajoDataTypes.DataType;
 import static org.apache.tajo.common.TajoDataTypes.Type;
@@ -61,7 +59,6 @@ import static org.apache.tajo.engine.planner.logical.WindowSpec.WindowStartBound
  * it returns an EvalNode.
  */
 public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, EvalNode> {
-  private final static Log LOG = LogFactory.getLog(ExprAnnotator.class);
   private CatalogService catalog;
 
   public ExprAnnotator(CatalogService catalog) {
@@ -71,16 +68,19 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
   static class Context {
     LogicalPlan plan;
     LogicalPlan.QueryBlock currentBlock;
+    NameResolvingMode columnRsvLevel;
 
-    public Context(LogicalPlan plan, LogicalPlan.QueryBlock block) {
+    public Context(LogicalPlan plan, LogicalPlan.QueryBlock block, NameResolvingMode colRsvLevel) {
       this.plan = plan;
       this.currentBlock = block;
+      this.columnRsvLevel = colRsvLevel;
     }
   }
 
-  public EvalNode createEvalNode(LogicalPlan plan, LogicalPlan.QueryBlock block, Expr expr)
+  public EvalNode createEvalNode(LogicalPlan plan, LogicalPlan.QueryBlock block, Expr expr,
+                                 NameResolvingMode colRsvLevel)
       throws PlanningException {
-    Context context = new Context(plan, block);
+    Context context = new Context(plan, block, colRsvLevel);
     return AlgebraicUtil.eliminateConstantExprs(visit(context, new Stack<Expr>(), expr));
   }
 
@@ -165,7 +165,7 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
   private static EvalNode convertType(EvalNode evalNode, DataType toType) {
 
     // if original and toType is the same, we don't need type conversion.
-    if (evalNode.getValueType() == toType) {
+    if (evalNode.getValueType().equals(toType)) {
       return evalNode;
     }
     // the conversion to null is not allowed.
@@ -546,7 +546,20 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
   @Override
   public EvalNode visitColumnReference(Context ctx, Stack<Expr> stack, ColumnReferenceExpr expr)
       throws PlanningException {
-    Column column = ctx.plan.resolveColumn(ctx.currentBlock, expr);
+    Column column;
+
+    switch (ctx.columnRsvLevel) {
+    case LEGACY:
+      column = ctx.plan.resolveColumn(ctx.currentBlock, expr);
+      break;
+    case RELS_ONLY:
+    case RELS_AND_SUBEXPRS:
+    case SUBEXPRS_AND_RELS:
+      column = NameResolver.resolve(ctx.plan, ctx.currentBlock, expr, ctx.columnRsvLevel);
+      break;
+    default:
+      throw new PlanningException("Unsupported column resolving level: " + ctx.columnRsvLevel.name());
+    }
     return new FieldEval(column);
   }
 
@@ -554,6 +567,10 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
   public EvalNode visitTargetExpr(Context ctx, Stack<Expr> stack, NamedExpr expr) throws PlanningException {
     throw new PlanningException("ExprAnnotator cannot take NamedExpr");
   }
+
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+  // Functions and General Set Functions Section
+  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
   @Override
   public EvalNode visitFunction(Context ctx, Stack<Expr> stack, FunctionExpr expr) throws PlanningException {
@@ -624,10 +641,6 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
     }
   }
 
-  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-  // General Set Section
-  ///////////////////////////////////////////////////////////////////////////////////////////////////////////
-
   @Override
   public EvalNode visitCountRowsFunction(Context ctx, Stack<Expr> stack, CountRowsFunctionExpr expr)
       throws PlanningException {
@@ -686,7 +699,7 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
   public EvalNode visitWindowFunction(Context ctx, Stack<Expr> stack, WindowFunctionExpr windowFunc)
       throws PlanningException {
 
-    WindowSpecExpr windowSpec = windowFunc.getWindowSpec();
+    WindowSpec windowSpec = windowFunc.getWindowSpec();
 
     Expr key;
     if (windowSpec.hasPartitionBy()) {
@@ -725,7 +738,7 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
       }
     } else {
       if (windowFunc.getSignature().equalsIgnoreCase("rank")) {
-        givenArgs = sortKeys;
+        givenArgs = sortKeys != null ? sortKeys : new EvalNode[0];
       }
     }
 

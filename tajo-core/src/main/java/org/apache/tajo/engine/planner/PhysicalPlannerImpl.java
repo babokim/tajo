@@ -69,6 +69,7 @@ import static org.apache.tajo.ipc.TajoWorkerProtocol.SortEnforce;
 public class PhysicalPlannerImpl implements PhysicalPlanner {
   private static final Log LOG = LogFactory.getLog(PhysicalPlannerImpl.class);
   private static final int UNGENERATED_PID = -1;
+  private final long INNER_JOIN_INMEMORY_HASH_THRESHOLD;
 
   protected final TajoConf conf;
   protected final AbstractStorageManager sm;
@@ -76,6 +77,8 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
   public PhysicalPlannerImpl(final TajoConf conf, final AbstractStorageManager sm) {
     this.conf = conf;
     this.sm = sm;
+
+    this.INNER_JOIN_INMEMORY_HASH_THRESHOLD = conf.getLongVar(ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD);
   }
 
   public PhysicalExec createPlan(final TaskAttemptContext context, final LogicalNode logicalPlan)
@@ -884,6 +887,7 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
             for (Path path : partitionedTableScanNode.getInputPaths()) {
               fileFragments.addAll(TUtil.newList(sm.split(scanNode.getCanonicalName(), path)));
             }
+
             FragmentProto[] fragments =
                 FragmentConvertor.toFragmentProtoArray(fileFragments.toArray(new FileFragment[fileFragments.size()]));
 
@@ -1002,7 +1006,7 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
       LOG.info("The planner chooses [Sort Aggregation] in (" + TUtil.arrayToString(sortSpecs) + ")");
     }
 
-    return new WinAggregateExec(context, windowAggNode, child);
+    return new WindowAggExec(context, windowAggNode, child);
   }
 
   public PhysicalExec createDistinctGroupByPlan(TaskAttemptContext context,
