@@ -57,7 +57,6 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -195,10 +194,19 @@ public class TajoClient implements Closeable {
         }
 
         String queueNames = conf.get(ConfVars.JOB_QUEUE_NAMES.varname);
+        //TODO refactoring
         if (queueNames != null && !queueNames.isEmpty()) {
-          Map<String, String> sessionVariables = new HashMap<String, String>();
-          sessionVariables.put(ConfVars.JOB_QUEUE_NAMES.varname, queueNames);
-          updateSessionVariables(sessionVariables);
+          KeyValueSet keyValueSet = new KeyValueSet();
+          keyValueSet.put(ConfVars.JOB_QUEUE_NAMES.varname, queueNames);
+
+          UpdateSessionVariableRequest request = UpdateSessionVariableRequest.newBuilder()
+              .setSessionId(sessionId)
+              .setSetVariables(keyValueSet.getProto()).build();
+
+          tajoMasterService.updateSessionVariables(null, request).getValue();
+          if (LOG.isDebugEnabled()) {
+            LOG.debug(String.format("Query will be requested to %s queue", queueNames));
+          }
         }
       } else {
         throw new InvalidClientSessionException(response.getMessage());
