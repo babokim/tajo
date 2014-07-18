@@ -67,6 +67,9 @@
     <script type="text/javascript">
 
     function killQuery(queryId) {
+        if (!confirm("Are you sure killing a query: " + queryId + " ?")) {
+            return;
+        }
         $.ajax({
             type: "POST",
             url: "query_exec",
@@ -112,7 +115,18 @@
       <td><%=(int)(eachQuery.getQueryInfo().getProgress() * 100.0f)%>%</td>
       <td><%=StringUtils.formatTime(time)%></td>
       <td><%=eachQuery.getQueryInfo().getQueryState()%></td>
+    <%
+        if(eachQuery.getQueryInfo().getSql().length() >=500) {
+    %>
+      <td><div style="height: 100px;display: block;overflow: auto;" ><%=eachQuery.getQueryInfo().getSql()%></div></td>
+    <%
+        }
+        else {
+    %>
       <td><%=eachQuery.getQueryInfo().getSql()%></td>
+    <%
+        }
+    %>
       <td><input id="btnSubmit" type="submit" value="Kill" onClick="javascript:killQuery('<%=eachQuery.getQueryId()%>');"></td>
     </tr>
     <%
@@ -146,7 +160,18 @@
       <td><%=eachQuery.getQueryInfo().getFinishTime() > 0 ? df.format(eachQuery.getQueryInfo().getFinishTime()) : "-"%></td>
       <td><%=runTime == -1 ? "-" : StringUtils.formatTime(runTime) %></td>
       <td><%=eachQuery.getQueryInfo().getQueryState()%></td>
+    <%
+        if(eachQuery.getQueryInfo().getSql().length() >=500) {
+    %>
+      <td><div style="height: 100px;display: block;overflow: auto;" ><%=eachQuery.getQueryInfo().getSql()%></div></td>
+    <%
+        }
+        else {
+    %>
       <td><%=eachQuery.getQueryInfo().getSql()%></td>
+    <%
+        }
+    %>
     </tr>
     <%
       }
