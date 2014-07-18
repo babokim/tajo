@@ -759,7 +759,7 @@ public class Repartitioner {
        String tableName) {
     int i = 0;
     int splitVolume =   subQuery.getContext().getConf().
-        getIntVar(ConfVars.DIST_QUERY_TABLE_PARTITION_VOLUME);
+        getIntVar(ConfVars.DIST_QUERY_TABLE_PARTITION_VOLUME) * 1048576;
 
     long sumNumBytes = 0L;
     Map<Integer, List<FetchImpl>> fetches = new HashMap<Integer, List<FetchImpl>>();
