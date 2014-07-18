@@ -131,10 +131,9 @@ public class QueryMasterManagerService extends CompositeService
       if(queryMasterTask == null || queryMasterTask.isStopped()) {
         done.run(LazyTaskScheduler.stopTaskRunnerReq);
       } else {
-        ContainerId cid =
-            queryMasterTask.getQueryTaskContext().getResourceAllocator().makeContainerId(request.getContainerId());
-        LOG.debug("getTask:" + cid + ", ebId:" + ebId);
-        queryMasterTask.handleTaskRequestEvent(new TaskRequestEvent(cid, ebId, done));
+        ContainerId cId = new TaskRunnerId(request.getContainerId());
+        LOG.debug("getTask:" + cId + ", ebId:" + ebId);
+        queryMasterTask.handleTaskRequestEvent(new TaskRequestEvent(request.getWorkerId(), cId, ebId, done));
       }
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
@@ -176,7 +175,7 @@ public class QueryMasterManagerService extends CompositeService
 
   @Override
   public void ping(RpcController controller,
-                   TajoIdProtos.QueryUnitAttemptIdProto attemptId,
+                   TajoIdProtos.ExecutionBlockIdProto executionBlockIdProto,
                    RpcCallback<PrimitiveProtos.BoolProto> done) {
     done.run(TajoWorker.TRUE_PROTO);
   }
