@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,26 +16,23 @@
  * limitations under the License.
  */
 
-package org.apache.tajo.storage;
+package org.apache.tajo.engine.planner.nameresolver;
 
-import org.apache.tajo.catalog.statistics.TableStats;
+import org.apache.tajo.algebra.ColumnReferenceExpr;
+import org.apache.tajo.catalog.Column;
+import org.apache.tajo.engine.exception.NoSuchColumnException;
+import org.apache.tajo.engine.planner.LogicalPlan;
+import org.apache.tajo.engine.planner.PlanningException;
 
-import java.io.Closeable;
-import java.io.IOException;
+public class ResolverByRels extends NameResolver {
+  @Override
+  public Column resolve(LogicalPlan plan, LogicalPlan.QueryBlock block, ColumnReferenceExpr columnRef)
+      throws PlanningException {
 
-public interface Appender extends Closeable {
-
-  void init() throws IOException;
-
-  void addTuple(Tuple t) throws IOException;
-  
-  void flush() throws IOException;
-
-  long getEstimatedOutputSize() throws IOException;
-  
-  void close() throws IOException;
-
-  void enableStats();
-  
-  TableStats getStats();
+    Column column = resolveFromRelsWithinBlock(plan, block, columnRef);
+    if (column == null) {
+      throw new NoSuchColumnException(columnRef.getCanonicalName());
+    }
+    return column;
+  }
 }

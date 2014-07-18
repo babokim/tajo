@@ -249,8 +249,7 @@ public class TajoConf extends Configuration {
     DIST_QUERY_SORT_PARTITION_VOLUME("tajo.dist-query.sort.partition-volume-mb", 256),
     DIST_QUERY_GROUPBY_PARTITION_VOLUME("tajo.dist-query.groupby.partition-volume-mb", 256),
 
-    DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb",
-        256 * 1024 * 1024),
+    DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb", 256),
 
     //////////////////////////////////
     // Physical Executors
@@ -452,8 +451,12 @@ public class TajoConf extends Configuration {
   }
 
   public static long getLongVar(Configuration conf, ConfVars var) {
-    assert (var.valClass == Long.class);
-    return conf.getLong(var.varname, var.defaultLongVal);
+    assert (var.valClass == Long.class || var.valClass == Integer.class);
+    if (var.valClass == Integer.class) {
+      return conf.getInt(var.varname, var.defaultIntVal);
+    } else {
+      return conf.getLong(var.varname, var.defaultLongVal);
+    }
   }
 
   public static long getLongVar(Configuration conf, ConfVars var, long defaultVal) {
