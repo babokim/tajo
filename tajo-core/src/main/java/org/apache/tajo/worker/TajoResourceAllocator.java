@@ -491,7 +491,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         new LinkedBlockingDeque<WorkerResourceRequest>();
 
     class WorkerResourceRequest {
-      AtomicBoolean isFirst = new AtomicBoolean();
+      AtomicBoolean isFirst = new AtomicBoolean(true);
       AtomicBoolean stop = new AtomicBoolean();
       ContainerAllocationEvent event;
       long updatedTime;
@@ -666,7 +666,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
       if(resources <= 0) return;
 
       List<Integer> workerIds;
-      if(request.event.isLeafQuery() && !request.isFirst.get()){
+      if(request.event.isLeafQuery() && request.isFirst.get()){
         workerIds = request.workerIds;
       } else {
         workerIds = Lists.newArrayList();
@@ -702,7 +702,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
           }
           launchTaskRunners(executionBlockId, tasksLaunchMap);
 
-          if(!request.isFirst.getAndSet(true)){
+          if(request.isFirst.getAndSet(false)){
             queryTaskContext.getEventHandler().handle(new SubQueryContainerAllocationEvent(executionBlockId, tasksLaunchMap));
           }
         }
