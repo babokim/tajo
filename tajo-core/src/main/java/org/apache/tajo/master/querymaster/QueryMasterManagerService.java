@@ -88,6 +88,7 @@ public class QueryMasterManagerService extends CompositeService
 
       queryMaster = new QueryMaster(workerContext);
       addService(queryMaster);
+
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
     }
@@ -108,7 +109,6 @@ public class QueryMasterManagerService extends CompositeService
     if(rpcServer != null) {
       rpcServer.shutdown();
     }
-
     LOG.info("QueryMasterManagerService stopped");
     super.stop();
   }
@@ -122,20 +122,19 @@ public class QueryMasterManagerService extends CompositeService
   }
 
   @Override
-  public void getTask(final RpcController controller, TajoWorkerProtocol.GetTaskRequestProto request,
-                      final RpcCallback<TajoWorkerProtocol.QueryUnitRequestProto> done) {
+  public void getTask(RpcController controller, TajoWorkerProtocol.GetTaskRequestProto request,
+                      RpcCallback<TajoWorkerProtocol.QueryUnitRequestProto> done) {
     try {
       ExecutionBlockId ebId = new ExecutionBlockId(request.getExecutionBlockId());
-
-
       QueryMasterTask queryMasterTask = workerContext.getQueryMaster().getQueryMasterTask(ebId.getQueryId());
 
       if(queryMasterTask == null || queryMasterTask.isStopped()) {
         done.run(LazyTaskScheduler.stopTaskRunnerReq);
       } else {
-        ContainerId cId = new TaskRunnerId(request.getContainerId());
-        LOG.debug("getTask:" + cId + ", ebId:" + ebId);
-        queryMasterTask.handleTaskRequestEvent(new TaskRequestEvent(request.getWorkerId(), cId, ebId, done));
+        ContainerId cid =
+            queryMasterTask.getQueryTaskContext().getResourceAllocator().makeContainerId(request.getContainerId());
+        LOG.debug("getTask:" + cid + ", ebId:" + ebId);
+        queryMasterTask.handleTaskRequestEvent(new TaskRequestEvent(cid, ebId, done));
       }
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
@@ -177,7 +176,7 @@ public class QueryMasterManagerService extends CompositeService
 
   @Override
   public void ping(RpcController controller,
-                   TajoIdProtos.ExecutionBlockIdProto executionBlockIdProto,
+                   TajoIdProtos.QueryUnitAttemptIdProto attemptId,
                    RpcCallback<PrimitiveProtos.BoolProto> done) {
     done.run(TajoWorker.TRUE_PROTO);
   }
