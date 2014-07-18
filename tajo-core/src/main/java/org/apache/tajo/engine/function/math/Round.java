@@ -34,18 +34,20 @@ import org.apache.tajo.storage.Tuple;
  * INT8 round(value FLOAT8)
  */
 @Description(
-  functionName = "round",
-  description = "Round to nearest integer.",
-  example = "> SELECT round(42.4)\n"
-          + "42",
-  returnType = TajoDataTypes.Type.INT8,
-  paramTypes = {@ParamTypes(paramTypes = {TajoDataTypes.Type.FLOAT4}),
-          @ParamTypes(paramTypes = {TajoDataTypes.Type.FLOAT8})}
+    functionName = "round",
+    description = "Round to nearest integer.",
+    example = "> SELECT round(42.4)\n"
+        + "42",
+    returnType = TajoDataTypes.Type.INT8,
+    paramTypes = {@ParamTypes(paramTypes = {TajoDataTypes.Type.FLOAT4}),
+        @ParamTypes(paramTypes = {TajoDataTypes.Type.FLOAT8}),
+        @ParamTypes(paramTypes = {TajoDataTypes.Type.INT4}),
+        @ParamTypes(paramTypes = {TajoDataTypes.Type.INT8})}
 )
 public class Round extends GeneralFunction {
   public Round() {
     super(new Column[] {
-      new Column("x", TajoDataTypes.Type.FLOAT8)
+        new Column("x", TajoDataTypes.Type.FLOAT8)
     });
   }
 
@@ -62,10 +64,13 @@ public class Round extends GeneralFunction {
     //       Math.round uses an approach different from other programming languages, so the results of round function
     //       can be different from other DBMSs. For example, Math.round(-5.5) returns -5. In contrast,
     //       round function in MySQL and PostgreSQL returns -6. The below code is a workaround code for this.
-    if (value < 0) {
+    if(value < 0 && value-(long)value!=0) {
       return DatumFactory.createInt8((long) Math.ceil(value - 0.5d));
-    } else {
+    } else if (value >= 0 && value-(long)value!=0){
       return DatumFactory.createInt8((long) Math.floor(value + 0.5d));
+    }
+    else {
+      return DatumFactory.createInt8((long)value);
     }
   }
 }
