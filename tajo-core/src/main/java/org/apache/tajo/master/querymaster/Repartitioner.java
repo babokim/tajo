@@ -18,6 +18,7 @@
 
 package org.apache.tajo.master.querymaster;
 
+import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Ints;
 import org.apache.commons.logging.Log;
@@ -510,10 +511,10 @@ public class Repartitioner {
                                                           TajoWorkerProtocol.ShuffleType type,
                                                           List<IntermediateEntry> partitions) {
     // ebId + pullhost -> FetchImmpl
-    Map<String, FetchImpl> mergedPartitions = new HashMap<String, FetchImpl>();
+    Map<Integer, FetchImpl> mergedPartitions = new HashMap<Integer, FetchImpl>();
 
     for (IntermediateEntry partition : partitions) {
-      String mergedKey = partition.getEbId().toString() + "," + partition.getPullHost();
+      int mergedKey = Objects.hashCode(partition.getEbId(), partition.getPullHost());
 
       if (mergedPartitions.containsKey(mergedKey)) {
         FetchImpl fetch = mergedPartitions.get(mergedKey);

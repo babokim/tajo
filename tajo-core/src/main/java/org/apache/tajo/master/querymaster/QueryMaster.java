@@ -169,9 +169,8 @@ public class QueryMaster extends CompositeService implements EventHandler {
 
     for (TajoMasterProtocol.WorkerResourceProto worker : workers) {
       try {
-        if (worker.getPeerRpcPort() == 0) continue;
-
-        rpc = connPool.getConnection(NetUtils.createSocketAddr(worker.getHost(), worker.getPeerRpcPort()),
+        TajoProtos.WorkerConnectionInfoProto connectionInfo = worker.getConnectionInfo();
+        rpc = connPool.getConnection(NetUtils.createSocketAddr(connectionInfo.getHost(), connectionInfo.getPeerRpcPort()),
             TajoWorkerProtocol.class, true);
         TajoWorkerProtocol.TajoWorkerProtocolService tajoWorkerProtocolService = rpc.getStub();
 
@@ -192,12 +191,12 @@ public class QueryMaster extends CompositeService implements EventHandler {
           TajoMasterProtocol.class, true);
       TajoMasterProtocol.TajoMasterProtocolService masterService = rpc.getStub();
 
-      CallFuture<TajoMasterProtocol.WorkerResourcesRequest> callBack =
-          new CallFuture<TajoMasterProtocol.WorkerResourcesRequest>();
+      CallFuture<TajoMasterProtocol.WorkerResourcesProto> callBack =
+          new CallFuture<TajoMasterProtocol.WorkerResourcesProto>();
       masterService.getAllWorkerResource(callBack.getController(),
           PrimitiveProtos.NullProto.getDefaultInstance(), callBack);
 
-      TajoMasterProtocol.WorkerResourcesRequest workerResourcesRequest = callBack.get(2, TimeUnit.SECONDS);
+      TajoMasterProtocol.WorkerResourcesProto workerResourcesRequest = callBack.get(2, TimeUnit.SECONDS);
       return workerResourcesRequest.getWorkerResourcesList();
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
@@ -216,9 +215,7 @@ public class QueryMaster extends CompositeService implements EventHandler {
       TajoMasterProtocol.TajoMasterProtocolService masterClientService = tmClient.getStub();
 
       TajoHeartbeat.Builder queryHeartbeatBuilder = TajoHeartbeat.newBuilder()
-          .setTajoWorkerHost(workerContext.getQueryMasterManagerService().getBindAddr().getHostName())
-          .setTajoQueryMasterPort(workerContext.getQueryMasterManagerService().getBindAddr().getPort())
-          .setTajoWorkerClientPort(workerContext.getTajoWorkerClientService().getBindAddr().getPort())
+          .setConnectionInfo(workerContext.getConnectionInfo().getProto())
           .setState(state)
           .setQueryId(queryId.getProto());
 
@@ -355,9 +352,7 @@ public class QueryMaster extends CompositeService implements EventHandler {
   private TajoHeartbeat buildTajoHeartBeat(QueryMasterTask queryMasterTask) {
     TajoHeartbeat.Builder builder = TajoHeartbeat.newBuilder();
 
-    builder.setTajoWorkerHost(workerContext.getQueryMasterManagerService().getBindAddr().getHostName());
-    builder.setTajoQueryMasterPort(workerContext.getQueryMasterManagerService().getBindAddr().getPort());
-    builder.setTajoWorkerClientPort(workerContext.getTajoWorkerClientService().getBindAddr().getPort());
+    builder.setConnectionInfo(workerContext.getConnectionInfo().getProto());
     builder.setState(queryMasterTask.getState());
     builder.setQueryId(queryMasterTask.getQueryId().getProto());
 

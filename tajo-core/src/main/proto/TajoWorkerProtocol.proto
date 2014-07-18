@@ -53,6 +53,7 @@ message TaskCompletionReport {
   optional TableStatsProto inputStats = 3;
   optional TableStatsProto resultStats = 4;
   repeated ShuffleFileOutput shuffleFileOutputs = 5;
+  required hadoop.yarn.ContainerIdProto containerId = 6;
 }
 
 message TaskFatalErrorReport {
@@ -89,7 +90,6 @@ message FetchProto {
     repeated int32 taskId = 9 [packed=true];
     repeated int32 attemptId = 10 [packed=true];
 }
-
 
 
 message QueryUnitResponseProto {
@@ -138,8 +138,9 @@ message QueryExecutionRequestProto {
 }
 
 message GetTaskRequestProto {
-    required hadoop.yarn.ContainerIdProto containerId = 1;
-    required ExecutionBlockIdProto executionBlockId = 2;
+    required int32 workerId = 1;
+    required hadoop.yarn.ContainerIdProto containerId = 2;
+    required ExecutionBlockIdProto executionBlockId = 3;
 }
 
 enum ShuffleType {
@@ -171,12 +172,10 @@ message DataChannelProto {
 }
 
 message RunExecutionBlockRequestProto {
-    required string executionBlockId = 1;
-    required string queryMasterHost = 2;
-    required int32 queryMasterPort = 3;
-    required string nodeId = 4;
-    required string containerId = 5;
-    optional string queryOutputPath = 6;
+    required ExecutionBlockIdProto executionBlockId = 1;
+    required WorkerConnectionInfoProto queryMaster = 2;
+    required int32 tasks = 3;
+    optional string queryOutputPath = 4;
 }
 
 service TajoWorkerProtocolService {
@@ -184,6 +183,7 @@ service TajoWorkerProtocolService {
 
   // from QueryMaster(Worker)
   rpc executeExecutionBlock(RunExecutionBlockRequestProto) returns (BoolProto);
+  rpc stopExecutionBlock(ExecutionBlockIdProto) returns (BoolProto);
   rpc killTaskAttempt(QueryUnitAttemptIdProto) returns (BoolProto);
   rpc cleanup(QueryIdProto) returns (BoolProto);
 }
@@ -315,7 +315,7 @@ message TaskHistoryProto {
 message TaskRunnerHistoryProto {
   required ExecutionBlockIdProto executionBlockId = 1;
   required string state = 2;
-  required string containerId = 3;
+  required hadoop.yarn.ContainerIdProto taskRunnerId = 3;
   optional int64 startTime = 4;
   optional int64 finishTime = 5;
   repeated TaskHistoryProto taskHistories = 6;

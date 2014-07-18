@@ -20,35 +20,35 @@ package org.apache.tajo.worker;
 
 import com.google.common.collect.Maps;
 import org.apache.hadoop.service.CompositeService;
-import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.tajo.master.ContainerProxy;
+import org.apache.tajo.master.cluster.WorkerConnectionInfo;
 
-import java.util.Map;
+import java.util.concurrent.ConcurrentMap;
 
 public abstract class AbstractResourceAllocator extends CompositeService implements ResourceAllocator {
-  private Map<ContainerId, ContainerProxy> containers = Maps.newConcurrentMap();
+  /**
+   * A key is worker id, and a value is a worker connection information.
+   */
+  protected ConcurrentMap<Integer, WorkerConnectionInfo> workerInfoMap = Maps.newConcurrentMap();
 
   public AbstractResourceAllocator() {
     super(AbstractResourceAllocator.class.getName());
   }
 
-  public void addContainer(ContainerId cId, ContainerProxy container) {
-    containers.put(cId, container);
+  public WorkerConnectionInfo getWorkerConnectionInfo(int workerId) {
+    return workerInfoMap.get(workerId);
   }
 
-  public void removeContainer(ContainerId cId) {
-    containers.remove(cId);
+  protected void addWorkerConnectionInfo(WorkerConnectionInfo connectionInfo) {
+    workerInfoMap.putIfAbsent(connectionInfo.getId(), connectionInfo);
   }
 
-  public boolean containsContainer(ContainerId cId) {
-    return containers.containsKey(cId);
+  protected WorkerConnectionInfo removeWorker(int workerId) {
+    return workerInfoMap.remove(workerId);
   }
 
-  public ContainerProxy getContainer(ContainerId cId) {
-    return containers.get(cId);
-  }
-
-  public Map<ContainerId, ContainerProxy> getContainers() {
-    return containers;
+  @Override
+  protected void serviceStop() throws Exception {
+    workerInfoMap.clear();
+    super.serviceStop();
   }
 }

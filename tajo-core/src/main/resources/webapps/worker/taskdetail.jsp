@@ -23,6 +23,7 @@
 <%@ page import="org.apache.tajo.QueryUnitAttemptId" %>
 <%@ page import="org.apache.tajo.ipc.TajoWorkerProtocol" %>
 <%@ page import="org.apache.tajo.util.TajoIdUtils" %>
+<%@ page import="org.apache.tajo.webapp.StaticHttpServer" %>
 <%@ page import="org.apache.tajo.worker.*" %>
 <%@ page import="java.text.SimpleDateFormat" %>
 <%@ page import="java.util.List" %>
@@ -30,12 +31,12 @@
 <%
     TajoWorker tajoWorker = (TajoWorker) StaticHttpServer.getInstance().getAttribute("tajo.info.server.object");
 
-    String containerId = request.getParameter("containerId");
+    String taskRunnerIdStr = request.getParameter("taskRunnerId");
     String quAttemptId = request.getParameter("queryUnitAttemptId");
     QueryUnitAttemptId queryUnitAttemptId = TajoIdUtils.parseQueryUnitAttemptId(quAttemptId);
     Task task = null;
     TaskHistory taskHistory = null;
-    if(containerId == null || containerId.isEmpty() || "null".equals(containerId)) {
+    if(taskRunnerIdStr == null || taskRunnerIdStr.isEmpty() || "null".equals(taskRunnerIdStr)) {
         task = tajoWorker.getWorkerContext().getTaskRunnerManager().getTaskByQueryUnitAttemptId(queryUnitAttemptId);
         if (task != null) {
             taskHistory = task.createTaskHistory();
@@ -43,13 +44,14 @@
             taskHistory = tajoWorker.getWorkerContext().getTaskRunnerManager().getTaskHistoryByQueryUnitAttemptId(queryUnitAttemptId);
         }
     } else {
-        TaskRunner runner = tajoWorker.getWorkerContext().getTaskRunnerManager().getTaskRunner(containerId);
+        TaskRunnerId taskRunnerId = TaskRunnerId.getTaskRunnerIdByString(taskRunnerIdStr);
+        TaskRunner runner = tajoWorker.getWorkerContext().getTaskRunnerManager().getTaskRunner(taskRunnerId);
         if(runner != null) {
             task = runner.getContext().getTask(queryUnitAttemptId);
             if (task != null) {
                 taskHistory = task.createTaskHistory();
             } else {
-                TaskRunnerHistory history = tajoWorker.getWorkerContext().getTaskRunnerManager().getExcutionBlockHistoryByTaskRunnerId(containerId);
+                TaskRunnerHistory history = tajoWorker.getWorkerContext().getTaskRunnerManager().getExcutionBlockHistoryByTaskRunnerId(taskRunnerId);
                 if(history != null) {
                     taskHistory = history.getTaskHistory(queryUnitAttemptId);
                 }
@@ -69,11 +71,10 @@
     %>
     <script type="text/javascript">
         alert("No Task Info for" + quAttemptId);
-        document.history.back();
+        history.back(0);
     </script>
     </head>
-</div>
-</body>
+<body></body>
 </html>
     <%
             return;

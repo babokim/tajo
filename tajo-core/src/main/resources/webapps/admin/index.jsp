@@ -34,8 +34,8 @@
 
 <%
   TajoMaster master = (TajoMaster) StaticHttpServer.getInstance().getAttribute("tajo.info.server.object");
-  Map<String, Worker> workers = master.getContext().getResourceManager().getWorkers();
-  Map<String, Worker> inactiveWorkers = master.getContext().getResourceManager().getInactiveWorkers();
+  Map<Integer, Worker> workers = master.getContext().getResourceManager().getWorkers();
+  Map<Integer, Worker> inactiveWorkers = master.getContext().getResourceManager().getInactiveWorkers();
 
   int numWorkers = 0;
   int numLiveWorkers = 0;
@@ -139,6 +139,7 @@
     <tr><td width='150'>Heap(Free/Total/Max): </td><td><%=Runtime.getRuntime().freeMemory()/1024/1024%> MB / <%=Runtime.getRuntime().totalMemory()/1024/1024%> MB / <%=Runtime.getRuntime().maxMemory()/1024/1024%> MB</td>
     <tr><td width='150'>Configuration:</td><td><a href='conf.jsp'>detail...</a></td></tr>
     <tr><td width='150'>Environment:</td><td><a href='env.jsp'>detail...</a></td></tr>
+    <tr><td width='150'>Scheduler:</td><td><a href='scheduler.jsp'>detail...</a></tr>
     <tr><td width='150'>Threads:</td><td><a href='thread.jsp'>thread dump...</a></tr>
   </table>
   <hr/>

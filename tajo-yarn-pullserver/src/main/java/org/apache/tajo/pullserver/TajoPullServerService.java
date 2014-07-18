@@ -57,7 +57,6 @@ import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
-import org.jboss.netty.handler.codec.frame.TooLongFrameException;
 import org.jboss.netty.handler.codec.http.*;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.handler.stream.ChunkedWriteHandler;
@@ -213,21 +212,20 @@ public class TajoPullServerService extends AbstractService {
       this.getConfig().setInt(TajoConf.ConfVars.PULLSERVER_PORT.varname
           , TajoConf.ConfVars.PULLSERVER_PORT.defaultIntVal);
     } catch (Throwable t) {
-      LOG.error(t);
+      LOG.fatal(t.getMessage(), t);
     }
   }
 
   // TODO change AbstractService to throw InterruptedException
   @Override
-  public synchronized void start() {
-    Configuration conf = getConfig();
+  protected synchronized void serviceInit(Configuration conf) throws Exception {
     ServerBootstrap bootstrap = new ServerBootstrap(selector);
-
     try {
-      pipelineFact = new HttpPipelineFactory(conf);
+      pipelineFact = new HttpPipelineFactory(getConfig());
     } catch (Exception ex) {
       throw new RuntimeException(ex);
     }
+
     bootstrap.setPipelineFactory(pipelineFact);
     port = conf.getInt(ConfVars.PULLSERVER_PORT.varname,
         ConfVars.PULLSERVER_PORT.defaultIntVal);
@@ -235,12 +233,17 @@ public class TajoPullServerService extends AbstractService {
     accepted.add(ch);
     port = ((InetSocketAddress)ch.getLocalAddress()).getPort();
     conf.set(ConfVars.PULLSERVER_PORT.varname, Integer.toString(port));
-    pipelineFact.PullServer.setPort(port);
     LOG.info(getName() + " listening on port " + port);
-    super.start();
-
     sslFileBufferSize = conf.getInt(SUFFLE_SSL_FILE_BUFFER_SIZE_KEY,
                                     DEFAULT_SUFFLE_SSL_FILE_BUFFER_SIZE);
+
+    super.serviceInit(conf);
+  }
+
+  @Override
+  public synchronized void serviceStart() throws Exception {
+    pipelineFact.PullServer.setPort(port);
+    super.serviceStart();
   }
 
   public int getPort() {
@@ -257,7 +260,7 @@ public class TajoPullServerService extends AbstractService {
 
       localFS.close();
     } catch (Throwable t) {
-      LOG.error(t);
+      LOG.error(t.getMessage(), t);
     } finally {
       super.stop();
     }
@@ -491,27 +494,33 @@ public class TajoPullServerService extends AbstractService {
     private ChannelFuture sendFile(ChannelHandlerContext ctx,
                                    Channel ch,
                                    FileChunk file) throws IOException {
-      RandomAccessFile spill;
+      RandomAccessFile spill = null;
+      ChannelFuture writeFuture;
       try {
         spill = new RandomAccessFile(file.getFile(), "r");
+        if (ch.getPipeline().get(SslHandler.class) == null) {
+          final FadvisedFileRegionWrapper filePart = new FadvisedFileRegionWrapper(spill,
+              file.startOffset, file.length(), manageOsCache, readaheadLength,
+              readaheadPool, file.getFile().getAbsolutePath());
+          writeFuture = ch.write(filePart);
+          writeFuture.addListener(new FileCloseListener(filePart));
+        } else {
+          // HTTPS cannot be done with zero copy.
+          final FadvisedChunkedFile chunk = new FadvisedChunkedFile(spill,
+              file.startOffset, file.length, sslFileBufferSize,
+              manageOsCache, readaheadLength, readaheadPool,
+              file.getFile().getAbsolutePath());
+          writeFuture = ch.write(chunk);
+        }
       } catch (FileNotFoundException e) {
         LOG.info(file.getFile() + " not found");
         return null;
-      }
-      ChannelFuture writeFuture;
-      if (ch.getPipeline().get(SslHandler.class) == null) {
-        final FadvisedFileRegionWrapper filePart = new FadvisedFileRegionWrapper(spill,
-            file.startOffset, file.length(), manageOsCache, readaheadLength,
-            readaheadPool, file.getFile().getAbsolutePath());
-        writeFuture = ch.write(filePart);
-        writeFuture.addListener(new FileCloseListener(filePart));
-      } else {
-        // HTTPS cannot be done with zero copy.
-        final FadvisedChunkedFile chunk = new FadvisedChunkedFile(spill,
-            file.startOffset, file.length, sslFileBufferSize,
-            manageOsCache, readaheadLength, readaheadPool,
-            file.getFile().getAbsolutePath());
-        writeFuture = ch.write(chunk);
+      } catch (Throwable e) {
+        if (spill != null) {
+          //should close a opening file
+          spill.close();
+        }
+        return null;
       }
       metrics.shuffleConnections.incr();
       metrics.shuffleOutputBytes.incr(file.length); // optimistic
@@ -537,18 +546,9 @@ public class TajoPullServerService extends AbstractService {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e)
         throws Exception {
-      Channel ch = e.getChannel();
-      Throwable cause = e.getCause();
-      if (cause instanceof TooLongFrameException) {
-        sendError(ctx, BAD_REQUEST);
-        return;
-      }
-
-      LOG.error("PullServer error: ", cause);
-      if (ch.isConnected()) {
-        LOG.error("PullServer error " + e);
-        sendError(ctx, INTERNAL_SERVER_ERROR);
-      }
+      LOG.error(e.getCause().getMessage(), e.getCause());
+      //if channel.close() is not called, never closed files in this request
+      e.getChannel().close();
     }
   }
 

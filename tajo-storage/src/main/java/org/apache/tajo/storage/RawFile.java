@@ -70,6 +70,7 @@ public class RawFile {
       this(conf, schema, meta, fragment.getPath());
     }
 
+    @Override
     public void init() throws IOException {
       File file;
       try {

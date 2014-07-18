@@ -25,14 +25,18 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.service.CompositeService;
+import org.apache.tajo.ExecutionBlockId;
 import org.apache.tajo.QueryId;
 import org.apache.tajo.QueryUnitAttemptId;
 import org.apache.tajo.TajoIdProtos;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.ipc.TajoWorkerProtocol;
+import org.apache.tajo.master.cluster.WorkerConnectionInfo;
 import org.apache.tajo.rpc.AsyncRpcServer;
 import org.apache.tajo.rpc.protocolrecords.PrimitiveProtos;
 import org.apache.tajo.util.NetUtils;
+import org.apache.tajo.worker.event.TaskRunnerEvent;
+import org.apache.tajo.worker.event.TaskRunnerStartEvent;
 
 import java.net.InetSocketAddress;
 
@@ -42,7 +46,6 @@ public class TajoWorkerManagerService extends CompositeService
 
   private AsyncRpcServer rpcServer;
   private InetSocketAddress bindAddr;
-  private String addr;
   private int port;
 
   private TajoWorker.WorkerContext workerContext;
@@ -70,14 +73,11 @@ public class TajoWorkerManagerService extends CompositeService
       this.rpcServer.start();
 
       this.bindAddr = NetUtils.getConnectAddress(rpcServer.getListenAddress());
-      this.addr = bindAddr.getHostName() + ":" + bindAddr.getPort();
-
-      this.port = bindAddr.getPort();
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
     }
     // Get the master address
-    LOG.info("TajoWorkerManagerService is bind to " + addr);
+    LOG.info("TajoWorkerManagerService is bind to " + bindAddr);
     tajoConf.setVar(TajoConf.ConfVars.WORKER_PEER_RPC_ADDRESS, NetUtils.normalizeInetSocketAddress(bindAddr));
     super.init(tajoConf);
   }
@@ -100,10 +100,6 @@ public class TajoWorkerManagerService extends CompositeService
     return bindAddr;
   }
 
-  public String getHostAndPort() {
-    return bindAddr.getHostName() + ":" + bindAddr.getPort();
-  }
-
   @Override
   public void ping(RpcController controller,
                    TajoIdProtos.QueryUnitAttemptIdProto attemptId,
@@ -117,18 +113,28 @@ public class TajoWorkerManagerService extends CompositeService
                                     RpcCallback<PrimitiveProtos.BoolProto> done) {
     workerContext.getWorkerSystemMetrics().counter("query", "executedExecutionBlocksNum").inc();
     try {
-      String[] params = new String[7];
-      params[0] = "standby";  //mode(never used)
-      params[1] = request.getExecutionBlockId();
-      // NodeId has a form of hostname:port.
-      params[2] = request.getNodeId();
-      params[3] = request.getContainerId();
+      //params[6] = request.getQueryOutputPath();
 
-      // QueryMaster's address
-      params[4] = request.getQueryMasterHost();
-      params[5] = String.valueOf(request.getQueryMasterPort());
-      params[6] = request.getQueryOutputPath();
-      workerContext.getTaskRunnerManager().startTask(params);
+      workerContext.getTaskRunnerManager().getEventHandler().handle(new TaskRunnerStartEvent(
+          new WorkerConnectionInfo(request.getQueryMaster())
+          , new ExecutionBlockId(request.getExecutionBlockId())
+          , request.getTasks()
+      ));
+      done.run(TajoWorker.TRUE_PROTO);
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
+      done.run(TajoWorker.FALSE_PROTO);
+    }
+  }
+
+  @Override
+  public void stopExecutionBlock(RpcController controller,
+                                 TajoIdProtos.ExecutionBlockIdProto ebIdProto,
+                                 RpcCallback<PrimitiveProtos.BoolProto> done) {
+    try {
+      workerContext.getTaskRunnerManager().getEventHandler().handle(new TaskRunnerEvent(TaskRunnerEvent.EventType.TASK_STOP
+          , new ExecutionBlockId(ebIdProto)
+      ));
       done.run(TajoWorker.TRUE_PROTO);
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
