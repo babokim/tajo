@@ -45,7 +45,6 @@ public class RegexPredicateEval extends PatternMatchPredicateEval {
       flags |= Pattern.CASE_INSENSITIVE;
     }
     this.compiled = Pattern.compile(StringEscapeUtils.unescapeJava(regex), flags);
-    this.compiled = Pattern.compile(regex, flags);
   }
 
   @Override
