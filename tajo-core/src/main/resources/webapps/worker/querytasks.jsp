@@ -200,7 +200,6 @@
                   "&queryUnitSeq=" + queryUnitSeq + "&sort=" + sort + "&sortOrder=" + sortOrder;
 
           String queryUnitHost = eachQueryUnit.getSucceededHost() == null ? "-" : eachQueryUnit.getSucceededHost();
-          try {
           if(eachQueryUnit.getSucceededHost() != null) {
               TajoMasterProtocol.WorkerResourceProto worker = workerMap.get(eachQueryUnit.getLastAttempt().getWorkerId());
               if(worker != null) {
@@ -211,9 +210,6 @@
                             + "/taskdetail.jsp?queryUnitAttemptId=" + lastAttemptId + "'>" + eachQueryUnit.getSucceededHost() + "</a>";
                   }
               }
-          }
-          }catch (Exception e){
-              e.printStackTrace(new java.io.PrintWriter(out));
           }
 
     %>
