@@ -75,6 +75,9 @@ public class TaskAttemptContext {
 
   private boolean enabledProfile;
   public StopWatch stopWatch;
+  /** a output volume for each partition */
+  private Map<Integer, Long> partitionOutputVolume;
+
   public TaskAttemptContext(TajoConf conf, QueryContext queryContext, final QueryUnitAttemptId queryId,
                             final FragmentProto[] fragments,
                             final Path workDir) {
@@ -98,6 +101,8 @@ public class TaskAttemptContext {
     this.shuffleFileOutputs = Maps.newHashMap();
 
     state = TaskAttemptState.TA_PENDING;
+
+    this.partitionOutputVolume = Maps.newHashMap();
 
     enabledProfile = QueryProfiler.isEnabledProfile(queryContext, conf);
     stopWatch = new StopWatch(enabledProfile);
@@ -208,6 +213,19 @@ public class TaskAttemptContext {
     return shuffleFileOutputs.entrySet().iterator();
   }
   
+  public void addPartitionOutputVolume(int partId, long volume) {
+    if (partitionOutputVolume.containsKey(partId)) {
+      long sum = partitionOutputVolume.get(partId);
+      partitionOutputVolume.put(partId, sum + volume);
+    } else {
+      partitionOutputVolume.put(partId, volume);
+    }
+  }
+
+  public Map<Integer, Long> getPartitionOutputVolume() {
+    return partitionOutputVolume;
+  }
+
   public void updateAssignedFragments(String tableId, Fragment[] fragments) {
     fragmentMap.remove(tableId);
     for(Fragment t : fragments) {
