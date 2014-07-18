@@ -200,8 +200,9 @@
                   "&queryUnitSeq=" + queryUnitSeq + "&sort=" + sort + "&sortOrder=" + sortOrder;
 
           String queryUnitHost = eachQueryUnit.getSucceededHost() == null ? "-" : eachQueryUnit.getSucceededHost();
+          try {
           if(eachQueryUnit.getSucceededHost() != null) {
-              TajoMasterProtocol.WorkerResourceProto worker = workerMap.get(eachQueryUnit.getSuccessfulAttempt().getWorkerId());
+              TajoMasterProtocol.WorkerResourceProto worker = workerMap.get(eachQueryUnit.getLastAttempt().getWorkerId());
               if(worker != null) {
                   QueryUnitAttempt lastAttempt = eachQueryUnit.getLastAttempt();
                   if(lastAttempt != null) {
@@ -210,6 +211,9 @@
                             + "/taskdetail.jsp?queryUnitAttemptId=" + lastAttemptId + "'>" + eachQueryUnit.getSucceededHost() + "</a>";
                   }
               }
+          }
+          }catch (Exception e){
+              e.printStackTrace(new java.io.PrintWriter(out));
           }
 
     %>
@@ -228,6 +232,7 @@
     %>
   </table>
   <%
+
   %>
 </div>
 </body>

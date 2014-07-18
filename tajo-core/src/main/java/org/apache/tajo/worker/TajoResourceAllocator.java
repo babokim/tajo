@@ -100,9 +100,9 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
   protected void serviceStop() throws Exception {
     allocatorThread.shutdown();
 
-    for (List<TajoMasterProtocol.AllocatedWorkerResourceProto> resourceProtoList : allocatedResourceMap.values()){
+    for (int workerId : allocatedResourceMap.keySet()){
       try{
-        releaseWorkerResources(queryTaskContext.getQueryId(), resourceProtoList);
+        releaseWorkerResource(queryTaskContext.getQueryId(), workerId);
       } catch (Throwable t){
         LOG.fatal(t.getMessage(), t);
       }
@@ -174,14 +174,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
       releaseService.submit(new Runnable() {
         @Override
         public void run() {
-          if(allocatedResourceMap.containsKey(workerId)){
-            try{
-              releaseWorkerResources(queryTaskContext.getQueryId(), allocatedResourceMap.get(workerId));
-              allocatedResourceMap.remove(workerId);
-            } catch (Throwable t){
-              LOG.fatal(t.getMessage(), t);
-            }
-          }
+          releaseWorkerResource(queryTaskContext.getQueryId(), workerId);
           stopExecutionBlock(executionBlockId, workerId);
         }
       });
@@ -200,28 +193,52 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
   @Override
   public void releaseWorkerResource(final ExecutionBlockId executionBlockId, final int workerId, final int resources) {
     if (allocatedResourceMap.containsKey(workerId)) {
+      final List<TajoMasterProtocol.AllocatedWorkerResourceProto> requestList;
+      if (allocatedResourceMap.get(workerId).size() == resources) {
+        requestList = allocatedResourceMap.remove(workerId);
+      } else {
+        requestList = new ArrayList<TajoMasterProtocol.AllocatedWorkerResourceProto>();
+        LinkedList<TajoMasterProtocol.AllocatedWorkerResourceProto> allocatedWorkerResources = allocatedResourceMap.get(workerId);
+        for (int i = 0; i < resources; i++) {
+          TajoMasterProtocol.AllocatedWorkerResourceProto allocatedWorkerResourceProto = allocatedWorkerResources.poll();
+          if (allocatedWorkerResourceProto == null) {
+            break;
+          }
+          requestList.add(allocatedWorkerResourceProto);
+        }
+      }
+
+      if(requestList.size() == 0){
+        allocatedResourceMap.remove(workerId);
+        return;
+      }
+
       releaseService.submit(new Runnable() {
         @Override
         public void run() {
-          final List<TajoMasterProtocol.AllocatedWorkerResourceProto> requestList = new ArrayList<TajoMasterProtocol.AllocatedWorkerResourceProto>();
-          LinkedList<TajoMasterProtocol.AllocatedWorkerResourceProto> allocatedWorkerResources = allocatedResourceMap.get(workerId);
-          for (int i =0 ; i < resources; i++){
-            TajoMasterProtocol.AllocatedWorkerResourceProto allocatedWorkerResourceProto = allocatedWorkerResources.poll();
-            if(allocatedWorkerResourceProto == null){
-              break;
-            }
-            requestList.add(allocatedWorkerResourceProto);
-          }
-
-          if(requestList.size() == 0){
-            allocatedResourceMap.remove(workerId);
-            return;
-          }
-
           if (LOG.isDebugEnabled()) {
             LOG.debug("Release Worker: "+ workerId+", EBId : "+executionBlockId+", Resources: " + requestList);
           }
-          releaseWorkerResources(executionBlockId.getQueryId(), requestList);
+          releaseWorkerResourceRequest(executionBlockId.getQueryId(), requestList);
+        }
+      });
+    }
+  }
+
+  private void releaseWorkerResource(final QueryId queryId, final int workerId) {
+    if (allocatedResourceMap.containsKey(workerId)) {
+      final List<TajoMasterProtocol.AllocatedWorkerResourceProto> requestList = allocatedResourceMap.remove(workerId);
+      if(requestList.size() == 0){
+        return;
+      }
+
+      releaseService.submit(new Runnable() {
+        @Override
+        public void run() {
+          if (LOG.isDebugEnabled()) {
+            LOG.debug("Release Worker: "+ workerId+", QueryId : "+queryId+", Resources: " + requestList);
+          }
+          releaseWorkerResourceRequest(queryId, requestList);
         }
       });
     }
@@ -295,9 +312,9 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     }
   }
 
-  private void releaseWorkerResources(QueryId queryId,
+  private void releaseWorkerResourceRequest(QueryId queryId,
                                       List<TajoMasterProtocol.AllocatedWorkerResourceProto> resources) {
-    if (resources.size() == 0) return;
+    if (resources == null || resources.size() == 0) return;
 
     allocatedSize.getAndAdd(-resources.size());
     RpcConnectionPool connPool = RpcConnectionPool.getPool(queryTaskContext.getConf());
@@ -319,7 +336,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
       connPool.releaseConnection(tmClient);
     }
 
-    if(allocatorThread.queue.size() > 0) {
+    if(allocatedSize.get() < workerInfoMap.size()) {
       synchronized (allocatorThread) {
         allocatorThread.notifyAll();
       }
@@ -465,7 +482,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
   }
 
   class WorkerResourceAllocator extends Thread {
-    final int delay = 1000;
+    final int delay = 100;
     final int updateInterval = 1000;
     private AtomicBoolean stop = new AtomicBoolean(false);
     final TajoResourceAllocator allocator;
@@ -508,8 +525,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         for (int workerId : allocatedResourceMap.keySet()) {
           if (allocatedResourceMap.containsKey(workerId)) {
             try {
-              List<TajoMasterProtocol.AllocatedWorkerResourceProto> allocated = allocatedResourceMap.remove(workerId);
-              releaseWorkerResources(queryTaskContext.getQueryId(), allocated);
+              releaseWorkerResource(queryTaskContext.getQueryId(), workerId);
             } catch (Throwable t) {
               LOG.fatal(t.getMessage(), t);
             }
@@ -615,7 +631,10 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
               LOG.debug("All Allocated. executionBlockId : " + request.event.getExecutionBlockId());
             } else {
               int availableSize = resources - allocatedSize.get();
-              resources = Math.min(remainingTask, resources); // for tail tasks
+              if(LOG.isDebugEnabled()){
+                LOG.debug(String.format("requiredNum: %d, allocatedSize: %d, remainingTask: %d", resources, allocatedSize.get(), remainingTask));
+              }
+              resources = Math.min(remainingTask * 2, resources); // for tail tasks
               int determinedResources  = Math.min(resources, availableSize);
               allocateContainers(request, determinedResources);
             }
@@ -656,6 +675,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
           reserveWokerResources(executionBlockId, resources, request.event.isLeafQuery(), workerIds);
       if (response != null) {
         List<TajoMasterProtocol.AllocatedWorkerResourceProto> allocatedResources = response.getAllocatedWorkerResourceList();
+        allocatedSize.addAndGet(allocatedResources.size());
 
         Map<Integer, Integer> tasksLaunchMap = Maps.newHashMap();
         for (TajoMasterProtocol.AllocatedWorkerResourceProto eachAllocatedResource : allocatedResources) {
@@ -673,7 +693,6 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         }
 
         if (!request.stop.get() && allocatedResources.size() > 0) {
-          allocatedSize.addAndGet(allocatedResources.size());
           LOG.info("Reserved worker resources : " + allocatedResources.size()
               + ", EBId : " + executionBlockId);
           LOG.debug("SubQueryContainerAllocationEvent fire:" + executionBlockId);
