@@ -164,7 +164,8 @@ public class ExprAnnotator extends BaseAlgebraVisitor<ExprAnnotator.Context, Eva
       return evalNode;
     }
     // the conversion to null is not allowed.
-    if (evalNode.getValueType().getType() == Type.NULL_TYPE || toType.getType() == Type.NULL_TYPE) {
+    if (evalNode.getType() != EvalType.CASE &&
+        (evalNode.getValueType().getType() == Type.NULL_TYPE || toType.getType() == Type.NULL_TYPE)) {
       return evalNode;
     }
 
