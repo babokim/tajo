@@ -19,6 +19,7 @@
 package org.apache.tajo.engine.eval;
 
 import com.google.gson.annotations.Expose;
+import org.apache.commons.lang.StringEscapeUtils;
 
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -43,6 +44,7 @@ public class RegexPredicateEval extends PatternMatchPredicateEval {
     if (caseInsensitive) {
       flags |= Pattern.CASE_INSENSITIVE;
     }
+    this.compiled = Pattern.compile(StringEscapeUtils.unescapeJava(regex), flags);
     this.compiled = Pattern.compile(regex, flags);
   }
 
