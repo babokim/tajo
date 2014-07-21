@@ -46,8 +46,7 @@ import org.apache.tajo.rpc.NettyClientBase;
 import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.rpc.RpcConnectionPool;
 import org.apache.tajo.rpc.protocolrecords.PrimitiveProtos;
-import org.apache.tajo.scheduler.MultiQueueFiFoScheduler;
-import org.apache.tajo.scheduler.Scheduler;
+import org.apache.tajo.scheduler.*;
 
 import java.net.InetSocketAddress;
 import java.util.*;
@@ -486,7 +485,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     final int updateInterval = 1000;
     private AtomicBoolean stop = new AtomicBoolean(false);
     final TajoResourceAllocator allocator;
-    final Map<String, MultiQueueFiFoScheduler.QueueProperty> queuePropertyMap;
+    final Map<String, AbstractScheduler.QueueProperty> queuePropertyMap;
     final BlockingDeque<WorkerResourceRequest> queue =
         new LinkedBlockingDeque<WorkerResourceRequest>();
 
@@ -495,12 +494,12 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
       AtomicBoolean stop = new AtomicBoolean();
       ContainerAllocationEvent event;
       long updatedTime;
-      MultiQueueFiFoScheduler.QueueProperty queueProperty;
+      AbstractScheduler.QueueProperty queueProperty;
       int runningInQueue = 0;
       List<Integer> workerIds;
 
       public WorkerResourceRequest(ContainerAllocationEvent event, List<Integer> workerIds,
-                                   MultiQueueFiFoScheduler.QueueProperty queueProperty) {
+                                   AbstractScheduler.QueueProperty queueProperty) {
         this.event = event;
         this.workerIds = workerIds;
         this.queueProperty = queueProperty;
@@ -512,9 +511,25 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     public WorkerResourceAllocator(TajoResourceAllocator allocator) {
       this.allocator = allocator;
       this.queuePropertyMap = Maps.newHashMap();
-      List<MultiQueueFiFoScheduler.QueueProperty> queueProperties = MultiQueueFiFoScheduler.loadQueueProperty(tajoConf);
-      for (MultiQueueFiFoScheduler.QueueProperty queueProperty : queueProperties) {
-        queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
+      Scheduler scheduler;
+      try {
+        scheduler = SchedulingAlgorithms.getScheduler(tajoConf);
+        LOG.info("Load scheduler : " + scheduler.getMode());
+        if(scheduler instanceof FairScheduler){
+          FairScheduler fairScheduler = (FairScheduler)scheduler;
+          List<AbstractScheduler.QueueProperty> queueProperties = fairScheduler.loadQueueProperty(tajoConf);
+          for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
+            queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
+          }
+        } else if(scheduler instanceof MultiQueueFiFoScheduler){
+          MultiQueueFiFoScheduler multiQueueFiFoScheduler = (MultiQueueFiFoScheduler)scheduler;
+          List<AbstractScheduler.QueueProperty> queueProperties = multiQueueFiFoScheduler.loadQueueProperty(tajoConf);
+          for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
+            queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
+          }
+        }
+      } catch (Exception e) {
+        throw new RuntimeException(e);
       }
     }
 
@@ -540,7 +555,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
           workerIds = Lists.newArrayList();
         }
 
-        MultiQueueFiFoScheduler.QueueProperty queueProperty =
+        AbstractScheduler.QueueProperty queueProperty =
             queuePropertyMap.get(queryTaskContext.getSession().getVariable(Scheduler.QUERY_QUEUE_KEY, Scheduler.DEFAULT_QUEUE_NAME));
 
         queue.put(new WorkerResourceRequest(event, workerIds, queueProperty));

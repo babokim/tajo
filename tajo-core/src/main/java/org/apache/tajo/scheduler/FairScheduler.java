@@ -19,6 +19,7 @@
 package org.apache.tajo.scheduler;
 
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -26,7 +27,6 @@ import org.apache.tajo.QueryId;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.master.querymaster.QueryJobManager;
-import org.apache.tajo.util.TUtil;
 
 import java.util.*;
 
@@ -37,50 +37,13 @@ import java.util.*;
 public class FairScheduler extends AbstractScheduler {
   private static final Log LOG = LogFactory.getLog(FairScheduler.class.getName());
 
-  public static final String QUEUE_KEY_REPFIX = "tajo.multiple.queue";
+  public static final String QUEUE_KEY_REPFIX = "tajo.fair.queue";
   public static final String QUEUE_NAMES_KEY = QUEUE_KEY_REPFIX + ".names";
 
   private Map<String, QueueProperty> queueProperties = new HashMap<String, QueueProperty>();
   private Map<String, LinkedList<QuerySchedulingInfo>> queues = new HashMap<String, LinkedList<QuerySchedulingInfo>>();
   private Map<QueryId, QuerySchedulingInfo> runningQueries = Maps.newConcurrentMap();
-  private Map<QueryId, String> runningQueueMap = Maps.newConcurrentMap();
-
-  public static class QueueProperty {
-    private String queueName;
-    private int minCapacity;
-    private int maxCapacity;
-
-    public String getQueueName() {
-      return queueName;
-    }
-
-    public int getMinCapacity() {
-      return minCapacity;
-    }
-
-    public int getMaxCapacity() {
-      return maxCapacity;
-    }
-
-    @Override
-    public String toString() {
-      return queueName + "(" + minCapacity + "," + maxCapacity + ")";
-    }
-
-    @Override
-    public int hashCode() {
-      return toString().hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof QueueProperty)) {
-        return false;
-      }
-
-      return queueName.equals(((QueueProperty)obj).queueName);
-    }
-  }
+  private Map<QueryId, String> queryAssignedMap = Maps.newConcurrentMap();
 
   @Override
   public void init(QueryJobManager queryJobManager) {
@@ -92,11 +55,11 @@ public class FairScheduler extends AbstractScheduler {
     Set<String> previousQueueNames = new HashSet<String>(queues.keySet());
 
     for (QueueProperty eachQueue: newQueryList) {
-      queueProperties.put(eachQueue.queueName, eachQueue);
+      queueProperties.put(eachQueue.getQueueName(), eachQueue);
       if (!previousQueueNames.remove(eachQueue.getQueueName())) {
         // not existed queue
         LinkedList<QuerySchedulingInfo> queue = new LinkedList<QuerySchedulingInfo>();
-        queues.put(eachQueue.queueName, queue);
+        queues.put(eachQueue.getQueueName(), queue);
         LOG.info("Queue [" + eachQueue + "] added");
       }
     }
@@ -128,8 +91,8 @@ public class FairScheduler extends AbstractScheduler {
 
       for (QueueProperty eachQueue : queueList) {
         LinkedList<QuerySchedulingInfo> queue = new LinkedList<QuerySchedulingInfo>();
-        queues.put(eachQueue.queueName, queue);
-        queueProperties.put(eachQueue.queueName, eachQueue);
+        queues.put(eachQueue.getQueueName(), queue);
+        queueProperties.put(eachQueue.getQueueName(), eachQueue);
         LOG.info("Queue [" + eachQueue + "] added");
       }
     }
@@ -137,16 +100,13 @@ public class FairScheduler extends AbstractScheduler {
 
   public static List<QueueProperty> loadQueueProperty(TajoConf tajoConf) {
     TajoConf queueConf = new TajoConf(tajoConf);
-    queueConf.addResource("tajo-multiple-queue.xml");
+    queueConf.addResource("tajo-fair-queue.xml");
 
     List<QueueProperty> queueList = new ArrayList<QueueProperty>();
 
     String queueNameProperty = queueConf.get(QUEUE_NAMES_KEY);
     if (queueNameProperty == null || queueNameProperty.isEmpty()) {
-      QueueProperty queueProperty = new QueueProperty();
-      queueProperty.queueName = DEFAULT_QUEUE_NAME;
-      queueProperty.maxCapacity = -1;   // unlimited
-
+      QueueProperty queueProperty = new QueueProperty(DEFAULT_QUEUE_NAME, 1, -1);
       queueList.add(queueProperty);
 
       return queueList;
@@ -158,14 +118,13 @@ public class FairScheduler extends AbstractScheduler {
       String minPropertyKey = QUEUE_KEY_REPFIX + "." + eachQueue + ".min";
 
       if (StringUtils.isEmpty(queueConf.get(maxPropertyKey)) || StringUtils.isEmpty(queueConf.get(minPropertyKey))) {
-        LOG.error("Can't find " + maxPropertyKey + " or "+ minPropertyKey + " in tajo-multiple-queue.xml");
+        LOG.error("Can't find " + maxPropertyKey + " or "+ minPropertyKey + " in tajo-fair-queue.xml");
         continue;
       }
 
-      QueueProperty queueProperty = new QueueProperty();
-      queueProperty.queueName = eachQueue;
-      queueProperty.maxCapacity = queueConf.getInt(maxPropertyKey, 1);
-      queueProperty.minCapacity = queueConf.getInt(minPropertyKey, 1);
+      QueueProperty queueProperty = new QueueProperty(eachQueue,
+          queueConf.getInt(minPropertyKey, 1),
+          queueConf.getInt(maxPropertyKey, 1));
       queueList.add(queueProperty);
     }
 
@@ -208,95 +167,63 @@ public class FairScheduler extends AbstractScheduler {
   public void notifyQueryStop(QueryId queryId) {
     synchronized (queues) {
       QuerySchedulingInfo runningQuery = runningQueries.remove(queryId);
-      String queueName = runningQueueMap.remove(queryId);
+      String queueName = queryAssignedMap.remove(queryId);
 
 
       LinkedList<QuerySchedulingInfo> queue = queues.get(queueName);
       if (queue == null) {
-        //LOG.error("Can't get queue from multiple queue: " + queryId.toString() + ", queue=" + assignedQueueName);
+        LOG.error("Can't get queue from multiple queue: " + queryId.toString() + ", queue=" + queueName);
         return;
       }
 
-      if (runningQuery == null) {
-        // If the query is a waiting query, remove from a queue.
-        LOG.info(queryId.toString() + " is not a running query. Removing from queue.");
-        QuerySchedulingInfo stoppedQuery = null;
-        for (QuerySchedulingInfo eachQuery: queue) {
-          if (eachQuery.getQueryId().equals(queryId)) {
-            stoppedQuery = eachQuery;
-            break;
-          }
-        }
-
-        if (stoppedQuery != null) {
-          queue.remove(stoppedQuery);
-        } else {
-          //LOG.error("No query info in the queue: " + queryId + ", queue=" + assignedQueueName);
-          return;
+      // If the query is a waiting query, remove from a queue.
+      LOG.info(queryId.toString() + " is not a running query. Removing from queue.");
+      QuerySchedulingInfo stoppedQuery = null;
+      for (QuerySchedulingInfo eachQuery: queue) {
+        if (eachQuery.getQueryId().equals(queryId)) {
+          stoppedQuery = eachQuery;
+          break;
         }
       }
 
-      // It this queue is empty, find a query which can be assigned this queue.
-//      if (queue.isEmpty()) {
-//        String reorganizeTargetQueueName = null;
-//        QuerySchedulingInfo reorganizeTargetQuery = null;
-//        int maxQueueSize = Integer.MIN_VALUE;
-//        for (Map.Entry<String, LinkedList<QuerySchedulingInfo>> entry: queues.entrySet()) {
-//          String eachQueueName = entry.getKey();
-//          LinkedList<QuerySchedulingInfo> eachQueue = entry.getValue();
-//          for (QuerySchedulingInfo eachQuery: eachQueue) {
-//            if (eachQuery.getCandidateQueueNames().contains(assignedQueueName)) {
-//              if (eachQueue.size() > maxQueueSize) {
-//                reorganizeTargetQuery = eachQuery;
-//                reorganizeTargetQueueName = eachQueueName;
-//                maxQueueSize = eachQueue.size();
-//                break;
-//              }
-//            }
-//          }
-//        }
-//
-//        if (reorganizeTargetQueueName != null) {
-//          LinkedList<QuerySchedulingInfo> reorganizeTargetQueue = queues.get(reorganizeTargetQueueName);
-//          reorganizeTargetQueue.remove(reorganizeTargetQuery);
-//
-//          reorganizeTargetQuery.setAssignedQueueName(assignedQueueName);
-//          queue.add(reorganizeTargetQuery);
-//
-//          LOG.info(reorganizeTargetQuery.getQueryId() + " is reAssigned from the " + reorganizeTargetQueueName +
-//              " to the " + assignedQueueName + " queue");
-//        }
-//      }
+      if (stoppedQuery != null) {
+        queue.remove(stoppedQuery);
+      } else {
+        LOG.error("No query info in the queue: " + queryId + ", queue=" + queueName);
+        return;
+      }
     }
     wakeupProcessor();
   }
 
   @Override
   protected QuerySchedulingInfo[] getScheduledQueries() {
-    synchronized(queues) {
-      Set<String> readyQueueNames = new HashSet<String>(queues.keySet());
-
-      for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
-        readyQueueNames.remove(eachQuery.getAssignedQueueName());
-      }
-      if (readyQueueNames.isEmpty()) {
-        return null;
-      }
-
+    synchronized (queues) {
       List<QuerySchedulingInfo> queries = new ArrayList<QuerySchedulingInfo>();
 
-      for (String eachQueueName : readyQueueNames) {
-        LinkedList<QuerySchedulingInfo> queue = queues.get(eachQueueName);
+      for (String eachQueueName : queues.keySet()) {
+        int runningSize = getRunningQueries(eachQueueName);
+        QueueProperty property = queueProperties.get(eachQueueName);
 
-        if (queue == null) {
-          LOG.warn("No queue for " + eachQueueName);
-          continue;
-        }
-
-        if (!queue.isEmpty()) {
-          QuerySchedulingInfo querySchedulingInfo = queue.poll();
-          queries.add(querySchedulingInfo);
-          runningQueries.put(querySchedulingInfo.getQueryId(), querySchedulingInfo);
+        if(property.getMaxCapacity() == -1){
+          LinkedList<QuerySchedulingInfo> queue = queues.get(eachQueueName);
+          if (queue != null && queue.size() > 0) {
+            QuerySchedulingInfo querySchedulingInfo = queue.pollFirst();
+            queries.add(querySchedulingInfo);
+            runningQueries.put(querySchedulingInfo.getQueryId(), querySchedulingInfo);
+          }
+        } else {
+          if (property.getMinCapacity() * (runningSize + 1) < property.getMaxCapacity()) {
+            LinkedList<QuerySchedulingInfo> queue = queues.get(eachQueueName);
+            if (queue != null && queue.size() > 0) {
+              QuerySchedulingInfo querySchedulingInfo = queue.pollFirst();
+              queries.add(querySchedulingInfo);
+              runningQueries.put(querySchedulingInfo.getQueryId(), querySchedulingInfo);
+            } else {
+              LOG.warn("No queue for " + eachQueueName);
+              continue;
+            }
+          }
         }
       }
 
@@ -309,40 +236,22 @@ public class FairScheduler extends AbstractScheduler {
     String submitQueueNameProperty = querySchedulingInfo.getSession().getVariable(ConfVars.JOB_QUEUE_NAMES.varname,
         ConfVars.JOB_QUEUE_NAMES.defaultVal);
 
-    String[] queueNames = submitQueueNameProperty.split(",");
-    Set<String> candidateQueueNames = TUtil.newHashSet(queueNames);
-
-    String selectedQueue = null;
-    int minQueueSize = Integer.MAX_VALUE;
-
+    String queueName = submitQueueNameProperty.split(",")[0];
     synchronized (queues) {
-      Set<String> runningQueues = new HashSet<String>();
-      for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
-        runningQueues.add(eachQuery.getAssignedQueueName());
-      }
+      LinkedList<QuerySchedulingInfo> queue = queues.get(queueName);
 
-      for (String eachQueue: queues.keySet()) {
-        LinkedList<QuerySchedulingInfo> queue = queues.get(eachQueue);
-        int queueSize = (queue == null ? Integer.MAX_VALUE : queue.size()) + (runningQueues.contains(eachQueue) ? 1 : 0);
-        if (candidateQueueNames.contains(eachQueue) && queueSize < minQueueSize) {
-          selectedQueue = eachQueue;
-          minQueueSize = queueSize;
-        }
-      }
+      if (queue != null) {
 
-      if (selectedQueue != null) {
-        LinkedList<QuerySchedulingInfo> queue = queues.get(selectedQueue);
-        querySchedulingInfo.setAssignedQueueName(selectedQueue);
-        querySchedulingInfo.setCandidateQueueNames(candidateQueueNames);
+        querySchedulingInfo.setAssignedQueueName(queueName);
+        querySchedulingInfo.setCandidateQueueNames(Sets.newHashSet(queueName));
         queue.push(querySchedulingInfo);
-        //queryAssignedMap.put(querySchedulingInfo.getQueryId(), selectedQueue);
 
-        LOG.info(querySchedulingInfo.getQueryId() + " is assigned to the [" + selectedQueue + "] queue");
+        queryAssignedMap.put(querySchedulingInfo.getQueryId(), queueName);
+
+        LOG.info(querySchedulingInfo.getQueryId() + " is assigned to the [" + queueName + "] queue");
+      } else {
+        throw new Exception("Can't find proper query queue(requested queue=" + submitQueueNameProperty + ")");
       }
-    }
-
-    if (selectedQueue == null) {
-      throw new Exception("Can't find proper query queue(requested queue=" + submitQueueNameProperty + ")");
     }
   }
 
@@ -368,8 +277,8 @@ public class FairScheduler extends AbstractScheduler {
         sb.append("<tr>");
         sb.append("<td>").append(eachQueueName).append("</td>");
 
-        sb.append("<td align='right'>").append(queryProperty.minCapacity).append("</td>");
-        sb.append("<td align='right'>").append(queryProperty.maxCapacity).append("</td>");
+        sb.append("<td align='right'>").append(queryProperty.getMinCapacity()).append("</td>");
+        sb.append("<td align='right'>").append(queryProperty.getMaxCapacity()).append("</td>");
 
         QuerySchedulingInfo runningQueryInfo = null;
         for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
@@ -401,12 +310,12 @@ public class FairScheduler extends AbstractScheduler {
 
   private class PropertyReloader extends Thread {
     public PropertyReloader() {
-      super("MultiQueueFiFoScheduler-PropertyReloader");
+      super("FairScheduler-PropertyReloader");
     }
 
     @Override
     public void run() {
-      LOG.info("MultiQueueFiFoScheduler-PropertyReloader started");
+      LOG.info("FairScheduler-PropertyReloader started");
       while (!stopped.get()) {
         try {
           Thread.sleep(60 * 1000);

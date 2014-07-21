@@ -35,6 +35,49 @@ public abstract class AbstractScheduler implements Scheduler {
   protected abstract QuerySchedulingInfo[] getScheduledQueries();
   protected abstract void addQueryToQueue(QuerySchedulingInfo querySchedulingInfo) throws Exception;
 
+  public static class QueueProperty {
+    private String queueName;
+    private int minCapacity;
+    private int maxCapacity;
+
+    public QueueProperty(String queueName, int minCapacity, int maxCapacity){
+      this.queueName = queueName;
+      this.minCapacity = minCapacity;
+      this.maxCapacity = maxCapacity;
+    }
+
+    public String getQueueName() {
+      return queueName;
+    }
+
+    public int getMinCapacity() {
+      return minCapacity;
+    }
+
+    public int getMaxCapacity() {
+      return maxCapacity;
+    }
+
+    @Override
+    public String toString() {
+      return queueName + "(" + minCapacity + "," + maxCapacity + ")";
+    }
+
+    @Override
+    public int hashCode() {
+      return toString().hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+      if (!(obj instanceof QueueProperty)) {
+        return false;
+      }
+
+      return queueName.equals(((QueueProperty)obj).queueName);
+    }
+  }
+
   @Override
   public void init(QueryJobManager queryJobManager) {
     this.queryJobManager = queryJobManager;

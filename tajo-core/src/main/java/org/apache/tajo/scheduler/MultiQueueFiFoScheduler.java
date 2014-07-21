@@ -48,43 +48,6 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
 
   private PropertyReloader propertyReloader;
 
-  public static class QueueProperty {
-    private String queueName;
-    private int minCapacity;
-    private int maxCapacity;
-
-    public String getQueueName() {
-      return queueName;
-    }
-
-    public int getMinCapacity() {
-      return minCapacity;
-    }
-
-    public int getMaxCapacity() {
-      return maxCapacity;
-    }
-
-    @Override
-    public String toString() {
-      return queueName + "(" + minCapacity + "," + maxCapacity + ")";
-    }
-
-    @Override
-    public int hashCode() {
-      return toString().hashCode();
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-      if (!(obj instanceof QueueProperty)) {
-        return false;
-      }
-
-      return queueName.equals(((QueueProperty)obj).queueName);
-    }
-  }
-
   @Override
   public void init(QueryJobManager queryJobManager) {
     super.init(queryJobManager);
@@ -95,11 +58,11 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
     Set<String> previousQueueNames = new HashSet<String>(queues.keySet());
 
     for (QueueProperty eachQueue: newQueryList) {
-      queueProperties.put(eachQueue.queueName, eachQueue);
+      queueProperties.put(eachQueue.getQueueName(), eachQueue);
       if (!previousQueueNames.remove(eachQueue.getQueueName())) {
         // not existed queue
         LinkedList<QuerySchedulingInfo> queue = new LinkedList<QuerySchedulingInfo>();
-        queues.put(eachQueue.queueName, queue);
+        queues.put(eachQueue.getQueueName(), queue);
         LOG.info("Queue [" + eachQueue + "] added");
       }
     }
@@ -131,8 +94,8 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
 
       for (QueueProperty eachQueue : queueList) {
         LinkedList<QuerySchedulingInfo> queue = new LinkedList<QuerySchedulingInfo>();
-        queues.put(eachQueue.queueName, queue);
-        queueProperties.put(eachQueue.queueName, eachQueue);
+        queues.put(eachQueue.getQueueName(), queue);
+        queueProperties.put(eachQueue.getQueueName(), eachQueue);
         LOG.info("Queue [" + eachQueue + "] added");
       }
     }
@@ -146,10 +109,7 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
 
     String queueNameProperty = queueConf.get(QUEUE_NAMES_KEY);
     if (queueNameProperty == null || queueNameProperty.isEmpty()) {
-      QueueProperty queueProperty = new QueueProperty();
-      queueProperty.queueName = DEFAULT_QUEUE_NAME;
-      queueProperty.maxCapacity = -1;   // unlimited
-
+      QueueProperty queueProperty = new QueueProperty(DEFAULT_QUEUE_NAME, 1, -1);
       queueList.add(queueProperty);
 
       return queueList;
@@ -164,9 +124,7 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
         continue;
       }
 
-      QueueProperty queueProperty = new QueueProperty();
-      queueProperty.queueName = eachQueue;
-      queueProperty.maxCapacity = Integer.parseInt(capacity);
+      QueueProperty queueProperty = new QueueProperty(eachQueue, 1, Integer.parseInt(capacity));
       queueList.add(queueProperty);
     }
 
@@ -378,8 +336,8 @@ public class MultiQueueFiFoScheduler extends AbstractScheduler {
         sb.append("<tr>");
         sb.append("<td>").append(eachQueueName).append("</td>");
 
-        sb.append("<td align='right'>").append(queryProperty.minCapacity).append("</td>");
-        sb.append("<td align='right'>").append(queryProperty.maxCapacity).append("</td>");
+        sb.append("<td align='right'>").append(queryProperty.getMinCapacity()).append("</td>");
+        sb.append("<td align='right'>").append(queryProperty.getMaxCapacity()).append("</td>");
 
         QuerySchedulingInfo runningQueryInfo = null;
         for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
