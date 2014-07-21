@@ -74,6 +74,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
 
 
   private WorkerResourceAllocator allocatorThread;
+  private static ConcurrentMap<String, AbstractScheduler.QueueProperty> queuePropertyMap = Maps.newConcurrentMap();
 
   public TajoResourceAllocator(QueryMasterTask.QueryMasterTaskContext queryTaskContext) {
     this.queryTaskContext = queryTaskContext;
@@ -84,6 +85,38 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         queryTaskContext.getConf().getIntVar(TajoConf.ConfVars.YARN_RM_TASKRUNNER_LAUNCH_PARALLEL_NUM));
   }
 
+  static {
+    loadSchedulerProperties(new TajoConf());
+  }
+
+  private static void loadSchedulerProperties(TajoConf conf) {
+    Scheduler scheduler = null;
+    try {
+      scheduler = SchedulingAlgorithms.getScheduler(conf);
+      LOG.info("Load scheduler : " + scheduler.getMode());
+      if(scheduler instanceof FairScheduler){
+        FairScheduler fairScheduler = (FairScheduler)scheduler;
+        List<AbstractScheduler.QueueProperty> queueProperties = fairScheduler.loadQueueProperty(conf);
+        for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
+          queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
+        }
+      } else if(scheduler instanceof MultiQueueFiFoScheduler){
+        MultiQueueFiFoScheduler multiQueueFiFoScheduler = (MultiQueueFiFoScheduler)scheduler;
+        List<AbstractScheduler.QueueProperty> queueProperties = multiQueueFiFoScheduler.loadQueueProperty(conf);
+        for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
+          queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
+        }
+      }
+    } catch (Exception e) {
+      LOG.error(e);
+      throw new RuntimeException(e);
+    } finally {
+      if(scheduler != null){
+        scheduler.stop();
+      }
+    }
+  }
+
   @Override
   public void init(Configuration conf) {
     tajoConf = (TajoConf) conf;
@@ -92,6 +125,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     queryTaskContext.getDispatcher().register(ContainerAllocatorEventType.class, new TajoWorkerAllocationHandler());
     queryTaskContext.getDispatcher().register(WorkerResourceRequestEvent.EventType.class, new WorkerResourceHandler());
 
+    loadSchedulerProperties(tajoConf);
     super.init(conf);
   }
 
@@ -485,7 +519,6 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
     final int updateInterval = 1000;
     private AtomicBoolean stop = new AtomicBoolean(false);
     final TajoResourceAllocator allocator;
-    final Map<String, AbstractScheduler.QueueProperty> queuePropertyMap;
     final BlockingDeque<WorkerResourceRequest> queue =
         new LinkedBlockingDeque<WorkerResourceRequest>();
 
@@ -504,33 +537,16 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         this.workerIds = workerIds;
         this.queueProperty = queueProperty;
         this.updatedTime = System.currentTimeMillis();
-        this.runningInQueue = allocator.getRunningQueries(queueProperty.getQueueName());
+        if (queueProperty != null) {
+          this.runningInQueue = allocator.getRunningQueries(queueProperty.getQueueName());
+        } else {
+          this.runningInQueue = 0;
+        }
       }
     }
 
     public WorkerResourceAllocator(TajoResourceAllocator allocator) {
       this.allocator = allocator;
-      this.queuePropertyMap = Maps.newHashMap();
-      Scheduler scheduler;
-      try {
-        scheduler = SchedulingAlgorithms.getScheduler(tajoConf);
-        LOG.info("Load scheduler : " + scheduler.getMode());
-        if(scheduler instanceof FairScheduler){
-          FairScheduler fairScheduler = (FairScheduler)scheduler;
-          List<AbstractScheduler.QueueProperty> queueProperties = fairScheduler.loadQueueProperty(tajoConf);
-          for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
-            queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
-          }
-        } else if(scheduler instanceof MultiQueueFiFoScheduler){
-          MultiQueueFiFoScheduler multiQueueFiFoScheduler = (MultiQueueFiFoScheduler)scheduler;
-          List<AbstractScheduler.QueueProperty> queueProperties = multiQueueFiFoScheduler.loadQueueProperty(tajoConf);
-          for (AbstractScheduler.QueueProperty queueProperty : queueProperties) {
-            queuePropertyMap.put(queueProperty.getQueueName(), queueProperty);
-          }
-        }
-      } catch (Exception e) {
-        throw new RuntimeException(e);
-      }
     }
 
     public void startWorkerResourceAllocator(ContainerAllocationEvent event) {

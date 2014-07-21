@@ -95,8 +95,11 @@ public abstract class AbstractScheduler implements Scheduler {
     if (stopped.getAndSet(true)) {
       return;
     }
-    synchronized (queryProcessor) {
-      queryProcessor.interrupt();
+
+    if(queryProcessor != null){
+      synchronized (queryProcessor) {
+        queryProcessor.interrupt();
+      }
     }
   }
 
