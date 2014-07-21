@@ -88,7 +88,6 @@ public class QueryMasterManagerService extends CompositeService
 
       queryMaster = new QueryMaster(workerContext);
       addService(queryMaster);
-
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
     }
@@ -109,6 +108,7 @@ public class QueryMasterManagerService extends CompositeService
     if(rpcServer != null) {
       rpcServer.shutdown();
     }
+
     LOG.info("QueryMasterManagerService stopped");
     super.stop();
   }
@@ -122,10 +122,12 @@ public class QueryMasterManagerService extends CompositeService
   }
 
   @Override
-  public void getTask(RpcController controller, TajoWorkerProtocol.GetTaskRequestProto request,
-                      RpcCallback<TajoWorkerProtocol.QueryUnitRequestProto> done) {
+  public void getTask(final RpcController controller, TajoWorkerProtocol.GetTaskRequestProto request,
+                      final RpcCallback<TajoWorkerProtocol.QueryUnitRequestProto> done) {
     try {
       ExecutionBlockId ebId = new ExecutionBlockId(request.getExecutionBlockId());
+
+
       QueryMasterTask queryMasterTask = workerContext.getQueryMaster().getQueryMasterTask(ebId.getQueryId());
 
       if(queryMasterTask == null || queryMasterTask.isStopped()) {
