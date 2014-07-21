@@ -763,7 +763,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
             }
 
             // this part is remote concurrency management of a tail tasks
-            int tailLimit = Math.max(remainingScheduledObjectNum() / (leafTaskHostMapping.size()), 1);
+            int tailLimit = Math.max(remainingScheduledObjectNum() / (leafTaskHostMapping.size()), 2);
 
             if(hostVolumeMapping.getRemoteConcurrency() > tailLimit){
               //release container
