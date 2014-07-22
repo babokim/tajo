@@ -229,4 +229,18 @@ public class QueryContext extends KeyValueSet {
       return conf.getLongVar(key);
     }
   }
+
+  public static Float getFloatVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
+    if (context.get(key.varname) != null) {
+      String val = context.get(key.varname);
+      try {
+        return Float.parseFloat(val);
+      } catch (NumberFormatException nfe) {
+        LOG.warn(nfe.getMessage());
+        return conf.getFloatVar(key);
+      }
+    } else {
+      return conf.getFloatVar(key);
+    }
+  }
 }

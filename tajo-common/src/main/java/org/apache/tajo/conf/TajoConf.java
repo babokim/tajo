@@ -251,6 +251,8 @@ public class TajoConf extends Configuration {
 
     DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb", 256),
 
+    DIST_QUERY_CLUSTER_SLOT_MAX_RATIO("tajo.dist-query.cluster-slot.max-ratio", 1.0f),
+
     //////////////////////////////////
     // Physical Executors
     //////////////////////////////////
