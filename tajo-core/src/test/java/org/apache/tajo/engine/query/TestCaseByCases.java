@@ -18,7 +18,6 @@
 
 package org.apache.tajo.engine.query;
 
-import com.google.gson.annotations.Expose;
 import org.apache.tajo.QueryTestCaseBase;
 import org.apache.tajo.TajoConstants;
 import org.junit.Test;
@@ -162,6 +161,13 @@ public class TestCaseByCases extends QueryTestCaseBase {
 
   @Test
   public final void testTAJO914Case4() throws Exception {
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
+  public final void testTAJO917Case1() throws Exception {
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);

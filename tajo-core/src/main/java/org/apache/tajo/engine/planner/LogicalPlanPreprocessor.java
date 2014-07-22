@@ -473,7 +473,7 @@ public class LogicalPlanPreprocessor extends BaseAlgebraVisitor<LogicalPlanPrepr
         throws PlanningException {
 
       String normalized = NameResolver.resolve(ctx.plan, ctx.currentBlock, expr,
-          NameResolvingMode.RELS_AND_SUBEXPRS).getQualifiedName();
+      NameResolvingMode.RELS_ONLY).getQualifiedName();
       expr.setName(normalized);
 
       return expr;
