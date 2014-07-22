@@ -32,6 +32,7 @@ import org.apache.tajo.catalog.statistics.StatisticsUtil;
 import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.engine.planner.logical.ShuffleFileWriteNode;
 import org.apache.tajo.storage.*;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -74,16 +75,18 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     }
     this.partitioner = new HashPartitioner(shuffleKeyIds, numShuffleOutputs);
     storeTablePath = new Path(context.getWorkDir(), "output");
+
+    stopWatch = new StopWatch(5);
   }
 
   String profileKey = getClass().getSimpleName() + ".next";
   @Override
   public void init() throws IOException {
-    context.stopWatch.reset(getClass().getSimpleName() + ".init");
+    stopWatch.reset(1);
     super.init();
     FileSystem fs = new RawLocalFileSystem();
     fs.mkdirs(storeTablePath);
-    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
+    nanoTimeInit = stopWatch.checkNano(1);
   }
   
   private Appender getAppender(int partId) throws IOException {
@@ -118,39 +121,43 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     Tuple tuple;
     Appender appender;
     int partId;
-    while (true) {
-      context.stopWatch.reset(profileKey);
-      tuple = child.next();
-      if (tuple == null) {
-        break;
+    stopWatch.reset(0);
+    try {
+      while (true) {
+        tuple = child.next();
+        if (tuple == null) {
+          break;
+        }
+        partId = partitioner.getPartition(tuple);
+        appender = getAppender(partId);
+        appender.addTuple(tuple);
+        numInTuple++;
+        numOutTuple++;
       }
-      partId = partitioner.getPartition(tuple);
-      appender = getAppender(partId);
-      appender.addTuple(tuple);
-      nanoTimeNext += context.stopWatch.checkNano(profileKey);
-      numNext++;
-    }
 
-    context.stopWatch.reset(getClass().getSimpleName() + ".flush");
-    List<TableStats> statSet = new ArrayList<TableStats>();
-    for (Map.Entry<Integer, Appender> entry : appenderMap.entrySet()) {
-      int partNum = entry.getKey();
-      Appender app = entry.getValue();
-      app.flush();
-      app.close();
-      statSet.add(app.getStats());
-      if (app.getStats().getNumRows() > 0) {
-        context.addShuffleFileOutput(partNum, getDataFile(partNum).getName());
-        context.addPartitionOutputVolume(partNum, app.getStats().getNumBytes());
+      stopWatch.reset(2);
+      List<TableStats> statSet = new ArrayList<TableStats>();
+      for (Map.Entry<Integer, Appender> entry : appenderMap.entrySet()) {
+        int partNum = entry.getKey();
+        Appender app = entry.getValue();
+        app.flush();
+        app.close();
+        statSet.add(app.getStats());
+        if (app.getStats().getNumRows() > 0) {
+          context.addShuffleFileOutput(partNum, getDataFile(partNum).getName());
+          context.addPartitionOutputVolume(partNum, app.getStats().getNumBytes());
+        }
       }
-    }
-    
-    // Collect and aggregated statistics data
-    TableStats aggregated = StatisticsUtil.aggregateTableStat(statSet);
-    context.setResultStats(aggregated);
 
-    nanoTimeFlush += context.stopWatch.checkNano(getClass().getSimpleName() + ".flush");
-    return null;
+      // Collect and aggregated statistics data
+      TableStats aggregated = StatisticsUtil.aggregateTableStat(statSet);
+      context.setResultStats(aggregated);
+
+      nanoTimeFlush += stopWatch.checkNano(2);
+      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
+    }
   }
 
   @Override

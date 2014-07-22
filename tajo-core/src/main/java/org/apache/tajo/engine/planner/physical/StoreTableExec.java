@@ -30,6 +30,7 @@ import org.apache.tajo.engine.planner.logical.InsertNode;
 import org.apache.tajo.engine.planner.logical.PersistentStoreNode;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.storage.*;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -59,10 +60,12 @@ public class StoreTableExec extends UnaryPhysicalExec {
     if (context.getQueryContext().get(QueryContext.OUTPUT_PER_FILE_SIZE) != null) {
       maxPerFileSize = Long.valueOf(context.getQueryContext().get(QueryContext.OUTPUT_PER_FILE_SIZE));
     }
+
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
-    context.stopWatch.reset(getClass().getSimpleName() + ".init");
+    stopWatch.reset(1);
     super.init();
 
     if (plan.hasOptions()) {
@@ -72,7 +75,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
     }
 
     openNewFile(writtenFileNum);
-    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
+    nanoTimeInit = stopWatch.checkNano(1);
   }
 
   public void openNewFile(int suffixId) throws IOException {
@@ -101,34 +104,35 @@ public class StoreTableExec extends UnaryPhysicalExec {
    */
   @Override
   public Tuple next() throws IOException {
-    String profileKey = getClass().getSimpleName() + ".next";
-    while(true) {
-      context.stopWatch.reset(profileKey);
-      tuple = child.next();
-      if (tuple == null) {
-        break;
-      }
-      numNext++;
-      appender.addTuple(tuple);
-      writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
-
-      if (writtenTupleSize > maxPerFileSize) {
-        appender.close();
-        writtenFileNum++;
-
-        if (sumStats == null) {
-          sumStats = appender.getStats();
-        } else {
-          StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
+    stopWatch.reset(0);
+    try {
+      while (true) {
+        tuple = child.next();
+        if (tuple == null) {
+          break;
         }
-        openNewFile(writtenFileNum);
-        writtenTupleSize = 0;
+        numOutTuple++;
+        appender.addTuple(tuple);
+        writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
+
+        if (writtenTupleSize > maxPerFileSize) {
+          appender.close();
+          writtenFileNum++;
+
+          if (sumStats == null) {
+            sumStats = appender.getStats();
+          } else {
+            StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
+          }
+          openNewFile(writtenFileNum);
+          writtenTupleSize = 0;
+        }
       }
 
-      nanoTimeNext = context.stopWatch.checkNano(profileKey);
+      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
-        
-    return null;
   }
 
   @Override

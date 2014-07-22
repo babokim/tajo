@@ -28,6 +28,7 @@ import org.apache.tajo.engine.utils.SchemaUtil;
 import org.apache.tajo.storage.FrameTuple;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.storage.VTuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -88,6 +89,8 @@ public class HashJoinExec extends BinaryPhysicalExec {
     frameTuple = new FrameTuple();
     outTuple = new VTuple(outSchema.size());
     leftKeyTuple = new VTuple(leftKeyList.length);
+
+    stopWatch = new StopWatch(5);
   }
 
   protected void getKeyLeftTuple(final Tuple outerTuple, Tuple keyTuple) {
@@ -97,7 +100,12 @@ public class HashJoinExec extends BinaryPhysicalExec {
   }
 
   long scanStartTime = 0;
+  long nanoTimeLoadRightNext = 0;
+  long nanoTimeLoadRight = 0;
+  long nanoTimeLeftNext = 0;
+
   public Tuple next() throws IOException {
+    stopWatch.reset(0);
     if (first) {
       loadRightToHashTable();
       scanStartTime = System.currentTimeMillis();
@@ -106,15 +114,17 @@ public class HashJoinExec extends BinaryPhysicalExec {
     Tuple rightTuple;
     boolean found = false;
 
-    context.stopWatch.reset("HashJoinExec.next");
     while(!finished) {
       if (shouldGetLeftTuple) { // initially, it is true.
         // getting new outer
+        stopWatch.reset(4);
         leftTuple = leftChild.next(); // it comes from a disk
+        nanoTimeLeftNext += stopWatch.checkNano(4);
         if (leftTuple == null) { // if no more tuples in left tuples on disk, a join is completed.
           finished = true;
           return null;
         }
+        numInTuple++;
 
         // getting corresponding right
         getKeyLeftTuple(leftTuple, leftKeyTuple); // get a left key tuple
@@ -145,17 +155,20 @@ public class HashJoinExec extends BinaryPhysicalExec {
       }
     }
 
-    nanoTimeNext += context.stopWatch.checkNano("HashJoinExec.next");
-    numNext++;
-    return new VTuple(outTuple);
+    numOutTuple++;
+    Tuple result = new VTuple(outTuple);
+
+    nanoTimeNext += stopWatch.checkNano(0);
+    return result;
   }
 
   protected void loadRightToHashTable() throws IOException {
     Tuple tuple;
     Tuple keyTuple;
 
+    stopWatch.reset(2); //loadRightToHashTable
     while (true) {
-      context.stopWatch.reset("HashJoinExec.next");
+      stopWatch.reset(3);
       tuple = rightChild.next();
       if (tuple == null) {
         break;
@@ -174,11 +187,12 @@ public class HashJoinExec extends BinaryPhysicalExec {
         newValue.add(tuple);
         tupleSlots.put(keyTuple, newValue);
       }
-      nanoTimeNext += context.stopWatch.checkNano("HashJoinExec.next");
-      numNext++;
+      nanoTimeLoadRightNext += stopWatch.checkNano(3);
+      numInTuple++;
     }
 
     first = false;
+    nanoTimeLoadRight += stopWatch.checkNano(2);
   }
 
   @Override
@@ -200,6 +214,10 @@ public class HashJoinExec extends BinaryPhysicalExec {
       tupleSlots.clear();
       tupleSlots = null;
     }
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLoadRightNext", nanoTimeLoadRightNext);
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLoadRight", nanoTimeLoadRight);
+    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLeftNext", nanoTimeLeftNext);
+
     closeProfile();
     iterator = null;
     plan = null;

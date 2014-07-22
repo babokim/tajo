@@ -33,10 +33,14 @@ import org.apache.tajo.engine.eval.FieldEval;
 import org.apache.tajo.engine.planner.Projector;
 import org.apache.tajo.engine.planner.Target;
 import org.apache.tajo.engine.planner.logical.ScanNode;
-import org.apache.tajo.engine.utils.*;
+import org.apache.tajo.engine.utils.SchemaUtil;
+import org.apache.tajo.engine.utils.TupleCache;
+import org.apache.tajo.engine.utils.TupleCacheKey;
+import org.apache.tajo.engine.utils.TupleUtil;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -64,6 +68,7 @@ public class SeqScanExec extends PhysicalExec {
   private boolean cacheRead = false;
 
   private String evalNodeKey;
+  private String projectorEvalNodeKey;
 
   public SeqScanExec(TaskAttemptContext context, AbstractStorageManager sm,
                      ScanNode plan, CatalogProtos.FragmentProto [] fragments) throws IOException {
@@ -90,6 +95,10 @@ public class SeqScanExec extends PhysicalExec {
     if (this.qual != null) {
       evalNodeKey = this.getClass().getSimpleName() + "." + this.qual.getClass().getSimpleName();
     }
+
+    projectorEvalNodeKey = this.getClass().getSimpleName() + ".project";
+
+    stopWatch = new StopWatch(4);
   }
 
   /**
@@ -141,7 +150,7 @@ public class SeqScanExec extends PhysicalExec {
   }
 
   public void init() throws IOException {
-    context.stopWatch.reset("SeqScanExec.init");
+    stopWatch.reset(1);
     Schema projected;
 
     if (fragments != null
@@ -197,7 +206,7 @@ public class SeqScanExec extends PhysicalExec {
     } else {
       initScanner(projected);
     }
-    this.nanoTimeInit = context.stopWatch.checkNano("SeqScanExec.init");
+    this.nanoTimeInit = stopWatch.checkNano(1);
   }
 
   private void initScanner(Schema projected) throws IOException {
@@ -247,48 +256,57 @@ public class SeqScanExec extends PhysicalExec {
   }
 
   private long nanoTimeEval;
+  private long nanoTimeProject;
 
   @Override
   public Tuple next() throws IOException {
     if (fragments == null) {
       return null;
     }
-    context.stopWatch.reset("SeqScanExec.next");
+    stopWatch.reset(0);
 
-    Tuple tuple;
-    Tuple outTuple = new VTuple(outColumnNum);
+    try {
+      Tuple tuple;
+      Tuple outTuple = new VTuple(outColumnNum);
 
-    if (!plan.hasQual()) {
-      if ((tuple = scanner.next()) != null) {
-        if (cacheRead) {
-          return tuple;
+      if (!plan.hasQual()) {
+        if ((tuple = scanner.next()) != null) {
+          numInTuple++;
+          if (cacheRead) {
+            numOutTuple++;
+            return tuple;
+          }
+          stopWatch.reset(2);
+          projector.eval(tuple, outTuple);
+          outTuple.setOffset(tuple.getOffset());
+          numOutTuple++;
+          nanoTimeProject += stopWatch.checkNano(2);
+          return outTuple;
+        } else {
+          return null;
         }
-        projector.eval(tuple, outTuple);
-        outTuple.setOffset(tuple.getOffset());
-        nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
-        numNext++;
-        return outTuple;
       } else {
+        while ((tuple = scanner.next()) != null) {
+          numInTuple++;
+          if (cacheRead) {
+            numOutTuple++;
+            return tuple;
+          }
+          stopWatch.reset(3);
+          Datum evalResult = qual.eval(inSchema, tuple);
+          nanoTimeEval += stopWatch.checkNano(3);
+          if (evalResult.isTrue()) {
+            stopWatch.reset(2);
+            projector.eval(tuple, outTuple);
+            nanoTimeProject += stopWatch.checkNano(2);
+            numOutTuple++;
+            return outTuple;
+          }
+        }
         return null;
       }
-    } else {
-      while ((tuple = scanner.next()) != null) {
-        if (cacheRead) {
-          nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
-          numNext++;
-          return tuple;
-        }
-        context.stopWatch.reset(evalNodeKey);
-        Datum evalResult = qual.eval(inSchema, tuple);
-        nanoTimeEval += context.stopWatch.checkNano(evalNodeKey);
-        if (evalResult.isTrue()) {
-          projector.eval(tuple, outTuple);
-          nanoTimeNext += context.stopWatch.checkNano("SeqScanExec.next");
-          numNext++;
-          return outTuple;
-        }
-      }
-      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 
@@ -313,6 +331,9 @@ public class SeqScanExec extends PhysicalExec {
     if (evalNodeKey != null) {
       putProfileMetrics(evalNodeKey + ".nanoTime", nanoTimeEval);
     }
+
+    putProfileMetrics(projectorEvalNodeKey + ".nanoTime", nanoTimeProject);
+
     closeProfile();
     scanner = null;
     plan = null;

@@ -18,6 +18,7 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 import org.apache.tajo.engine.planner.logical.SortNode;
 import org.apache.tajo.storage.Tuple;
@@ -39,13 +40,15 @@ public class MemSortExec extends SortExec {
                      SortNode plan, PhysicalExec child) {
     super(context, plan.getInSchema(), plan.getOutSchema(), child, plan.getSortKeys());
     this.plan = plan;
+
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
-    context.stopWatch.reset(getClass().getSimpleName() + ".init");
+    stopWatch.reset(1);
     super.init();
     this.tupleSlots = new ArrayList<Tuple>(1000);
-    nanoTimeInit = context.stopWatch.checkNano(getClass().getSimpleName() + ".init");
+    nanoTimeInit = stopWatch.checkNano(1);
   }
 
   long nanoTimeSort;
@@ -53,27 +56,30 @@ public class MemSortExec extends SortExec {
 
   @Override
   public Tuple next() throws IOException {
-    if (!sorted) {
-      context.stopWatch.reset(getClass().getSimpleName() + ".sort");
-      Tuple tuple;
-      while ((tuple = child.next()) != null) {
-        tupleSlots.add(new VTuple(tuple));
-      }
-      
-      Collections.sort(tupleSlots, getComparator());
-      this.iterator = tupleSlots.iterator();
-      sorted = true;
-      nanoTimeSort = context.stopWatch.checkNano(getClass().getSimpleName() + ".sort");
-    }
+    stopWatch.reset(0);
+    try {
+      if (!sorted) {
+        stopWatch.reset(2);
+        Tuple tuple;
+        while ((tuple = child.next()) != null) {
+          tupleSlots.add(new VTuple(tuple));
+        }
 
-    context.stopWatch.reset(getClass().getSimpleName() + ".next");
-    if (iterator.hasNext()) {
-      numNext++;
-      Tuple tuple = this.iterator.next();
-      nanoTimeNext += context.stopWatch.checkNano(getClass().getSimpleName() + ".next");
-      return tuple;
-    } else {
-      return null;
+        Collections.sort(tupleSlots, getComparator());
+        this.iterator = tupleSlots.iterator();
+        sorted = true;
+        nanoTimeSort = stopWatch.checkNano(2);
+      }
+
+      if (iterator.hasNext()) {
+        numOutTuple++;
+        Tuple tuple = this.iterator.next();
+        return tuple;
+      } else {
+        return null;
+      }
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 

@@ -32,7 +32,8 @@ import org.apache.tajo.engine.planner.enforce.Enforcer;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.engine.utils.QueryProfiler;
-import org.apache.tajo.engine.utils.StopWatch;
+import org.apache.tajo.engine.utils.QueryProfiler.QueryProfileMetrics;
+import org.apache.tajo.storage.ProfileContext;
 import org.apache.tajo.storage.fragment.Fragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
 
@@ -48,8 +49,9 @@ import static org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 /**
  * Contains the information about executing subquery.
  */
-public class TaskAttemptContext {
+public class TaskAttemptContext extends ProfileContext {
   private static final Log LOG = LogFactory.getLog(TaskAttemptContext.class);
+
   private final TajoConf conf;
   private final Map<String, List<FragmentProto>> fragmentMap = Maps.newHashMap();
 
@@ -73,14 +75,13 @@ public class TaskAttemptContext {
   private Enforcer enforcer;
   private QueryContext queryContext;
 
-  private boolean enabledProfile;
-  public StopWatch stopWatch;
   /** a output volume for each partition */
   private Map<Integer, Long> partitionOutputVolume;
 
   public TaskAttemptContext(TajoConf conf, QueryContext queryContext, final QueryUnitAttemptId queryId,
                             final FragmentProto[] fragments,
                             final Path workDir) {
+    super(QueryProfiler.isEnabledProfile(queryContext, conf));
     this.conf = conf;
     this.queryContext = queryContext;
     this.queryId = queryId;
@@ -103,9 +104,6 @@ public class TaskAttemptContext {
     state = TaskAttemptState.TA_PENDING;
 
     this.partitionOutputVolume = Maps.newHashMap();
-
-    enabledProfile = QueryProfiler.isEnabledProfile(queryContext, conf);
-    stopWatch = new StopWatch(enabledProfile);
   }
 
   @VisibleForTesting
@@ -116,10 +114,6 @@ public class TaskAttemptContext {
 
   public TajoConf getConf() {
     return this.conf;
-  }
-
-  public boolean isEnabledProfile() {
-    return enabledProfile;
   }
 
   public String getConfig(String key) {
@@ -324,5 +318,23 @@ public class TaskAttemptContext {
 
   public QueryContext getQueryContext() {
     return queryContext;
+  }
+
+  public String getId() {
+    if (getTaskId() == null) {
+      return null;
+    }
+    return getTaskId().toString();
+  }
+
+  @Override
+  public void addProfileMetrics(String operationName, String[] metricsKeys, long[] values) {
+    if (isEnabledProfile()) {
+      QueryProfileMetrics profileMetrics = new QueryProfileMetrics(operationName);
+      for (int i = 0; i < metricsKeys.length; i++) {
+        profileMetrics.addValue(metricsKeys[i], values[i]);
+      }
+      QueryProfiler.addProfileMetrics(getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);
+    }
   }
 }
