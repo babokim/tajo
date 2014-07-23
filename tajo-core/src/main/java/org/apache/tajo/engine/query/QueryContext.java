@@ -202,6 +202,14 @@ public class QueryContext extends KeyValueSet {
     }
   }
 
+  public static String getVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
+    if (context.get(key.varname) != null) {
+      return context.get(key.varname);
+    } else {
+      return conf.getVar(key);
+    }
+  }
+
   public static Integer getIntVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
     if (context.get(key.varname) != null) {
       String val = context.get(key.varname);

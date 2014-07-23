@@ -346,7 +346,9 @@ public class TajoConf extends Configuration {
     TAJO_DEBUG("tajo.debug", false),
 
     // ONLY FOR TESTCASE
-    TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1)
+    TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1)  ,
+
+    COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi"),
     ;
 
     public final String varname;

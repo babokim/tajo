@@ -24,20 +24,40 @@ import org.apache.tajo.TajoConstants;
 import org.apache.tajo.TajoTestingCluster;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.common.TajoDataTypes.Type;
+import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.storage.StorageConstants;
 import org.apache.tajo.util.KeyValueSet;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.sql.ResultSet;
+import java.util.Arrays;
+import java.util.Collection;
 
 import static org.junit.Assert.assertEquals;
 
 @Category(IntegrationTest.class)
+@RunWith(Parameterized.class)
 public class TestGroupByQuery extends QueryTestCaseBase {
 
-  public TestGroupByQuery() throws Exception {
+  public TestGroupByQuery(String option) throws Exception {
     super(TajoConstants.DEFAULT_DATABASE_NAME);
+
+    if (option.equals("single")) {
+      testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM.varname, "single");
+    } else {
+      testingCluster.setAllTajoDaemonConfValue(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM.varname, "multi");
+    }
+  }
+
+  @Parameterized.Parameters
+  public static Collection<Object[]> generateParameters() {
+    return Arrays.asList(new Object[][]{
+        {"single"},
+        {"multi"}
+    });
   }
 
   @Test
@@ -178,6 +198,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   @Test
   public final void testDistinctAggregation3() throws Exception {
     // select count(*), count(distinct l_orderkey), sum(distinct l_orderkey) from lineitem;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -187,6 +210,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregation4() throws Exception {
     // select l_linenumber, count(*), count(distinct l_orderkey), sum(distinct l_orderkey)
     // from lineitem group by l_linenumber;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -196,6 +222,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregation5() throws Exception {
     // select sum(distinct l_orderkey), l_linenumber, count(distinct l_orderkey), count(*) as total
     // from lineitem group by l_linenumber;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -205,6 +234,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregation6() throws Exception {
     // select count(distinct l_orderkey) v0, sum(l_orderkey) v1, sum(l_linenumber) v2, count(*) as v4 from lineitem
     // group by l_orderkey;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -214,6 +246,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregation7() throws Exception {
     // select count(*), count(distinct c_nationkey), count(distinct c_mktsegment) from customer
     // tpch scale 1000: 15000000	25	5
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -223,6 +258,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregationWithHaving1() throws Exception {
     // select l_linenumber, count(*), count(distinct l_orderkey), sum(distinct l_orderkey) from lineitem
     // group by l_linenumber having sum(distinct l_orderkey) >= 6;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -232,6 +270,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public final void testDistinctAggregationWithUnion1() throws Exception {
     // select sum(distinct l_orderkey), l_linenumber, count(distinct l_orderkey), count(*) as total
     // from (select * from lineitem union select * from lineitem) group by l_linenumber;
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -239,6 +280,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
   @Test
   public final void testDistinctAggregationCasebyCase() throws Exception {
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res;
 
     // one groupby, distinct, aggregation
@@ -444,6 +488,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
   @Test
   public final void testGroupByWithNullData4() throws Exception {
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
@@ -463,6 +510,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
   @Test
   public final void testGroupByWithNullData6() throws Exception {
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
     assertTableExists("table1");
 
@@ -475,6 +525,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
   @Test
   public final void testGroupByWithNullData7() throws Exception {
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     executeString("CREATE TABLE table1 (age INT4, point FLOAT4);").close();
     assertTableExists("table1");
 
@@ -511,6 +564,9 @@ public class TestGroupByQuery extends QueryTestCaseBase {
 
   @Test
   public final void testGroupByWithNullData10() throws Exception {
+    if ("single".equals(conf.getVar(TajoConf.ConfVars.COUNT_DISTINCT_ALGORITHM))) {
+      return;
+    }
     ResultSet res = executeQuery();
     assertResultSet(res);
     cleanupQuery(res);
