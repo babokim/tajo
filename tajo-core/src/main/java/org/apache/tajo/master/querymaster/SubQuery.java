@@ -48,10 +48,7 @@ import org.apache.tajo.engine.planner.PlannerUtil;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.planner.global.ExecutionBlock;
 import org.apache.tajo.engine.planner.global.MasterPlan;
-import org.apache.tajo.engine.planner.logical.GroupbyNode;
-import org.apache.tajo.engine.planner.logical.NodeType;
-import org.apache.tajo.engine.planner.logical.ScanNode;
-import org.apache.tajo.engine.planner.logical.StoreTableNode;
+import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.TajoMasterProtocol;
 import org.apache.tajo.master.*;
@@ -717,9 +714,12 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       MasterPlan masterPlan = subQuery.getMasterPlan();
       ExecutionBlock parent = masterPlan.getParent(subQuery.getBlock());
 
-      GroupbyNode grpNode = null;
+      LogicalNode grpNode = null;
       if (parent != null) {
         grpNode = PlannerUtil.findMostBottomNode(parent.getPlan(), NodeType.GROUP_BY);
+        if (grpNode == null) {
+          grpNode = PlannerUtil.findMostBottomNode(parent.getPlan(), NodeType.DISTINCT_GROUP_BY);
+        }
       }
 
       // We assume this execution block the first stage of join if two or more tables are included in this block,
@@ -786,7 +786,13 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         // Is this subquery the first step of group-by?
       } else if (grpNode != null) {
 
-        if (grpNode.getGroupingColumns().length == 0) {
+        boolean hasGroupColumns = true;
+        if (grpNode.getType() == NodeType.GROUP_BY) {
+          hasGroupColumns = ((GroupbyNode)grpNode).getGroupingColumns().length > 0;
+        } else if (grpNode.getType() == NodeType.DISTINCT_GROUP_BY) {
+          hasGroupColumns = ((DistinctGroupbyNode)grpNode).getGroupingColumns().length > 0;
+        }
+        if (!hasGroupColumns) {
           return 1;
         } else {
           long volume = getInputVolume(subQuery.masterPlan, subQuery.context, subQuery.block);
