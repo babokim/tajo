@@ -24,7 +24,6 @@ import org.apache.hadoop.fs.Path;
 import org.apache.tajo.*;
 import org.apache.tajo.catalog.*;
 import org.apache.tajo.common.TajoDataTypes.Type;
-import org.apache.tajo.common.TajoDataTypes.Type;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.Int4Datum;
@@ -35,9 +34,7 @@ import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.jdbc.TajoResultSet;
 import org.apache.tajo.master.querymaster.QueryMasterTask;
 import org.apache.tajo.storage.*;
-import org.apache.tajo.storage.*;
 import org.apache.tajo.util.FileUtil;
-import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.worker.TajoWorker;
 import org.junit.Test;
@@ -46,9 +43,9 @@ import org.junit.experimental.categories.Category;
 import java.io.File;
 import java.sql.ResultSet;
 
-import static junit.framework.TestCase.fail;
+import static junit.framework.TestCase.*;
 import static org.apache.tajo.TajoConstants.DEFAULT_DATABASE_NAME;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertNotNull;
 
 @Category(IntegrationTest.class)
 public class TestJoinBroadcast extends QueryTestCaseBase {
