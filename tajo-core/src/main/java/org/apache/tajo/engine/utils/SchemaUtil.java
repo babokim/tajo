@@ -48,7 +48,8 @@ public class SchemaUtil {
       }
     }
 
-    if (tmpColumnSeq > Integer.MAX_VALUE) {
+    // if overflow
+    if (tmpColumnSeq < 0) {
       tmpColumnSeq = 0;
     }
     return merged;

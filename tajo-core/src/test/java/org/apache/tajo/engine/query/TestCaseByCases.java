@@ -71,7 +71,7 @@ public class TestCaseByCases extends QueryTestCaseBase {
   }
 
   @Test
-  public final void testTAJO880_1() throws Exception {
+  public final void testTAJO880Case1() throws Exception {
     //TAJO-880: NULL in CASE clause occurs Exception.
     ResultSet res = executeString(
         "select case when l_returnflag != 'R' then l_orderkey else null end from lineitem"
