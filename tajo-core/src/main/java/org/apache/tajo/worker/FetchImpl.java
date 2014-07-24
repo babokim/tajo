@@ -31,10 +31,15 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.HASH_SHUFFLE;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.RANGE_SHUFFLE;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.SCATTERED_HASH_SHUFFLE;
+
 /**
  * <code>FetchImpl</code> information to indicate the locations of intermediate data.
  */
 public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cloneable {
+  private final static int HTTP_REQUEST_MAXIMUM_LENGTH = 1900;
   private TajoWorkerProtocol.FetchProto.Builder builder = null;
 
   private QueryUnit.PullHost host;             // The pull server host information
@@ -47,6 +52,9 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
 
   private List<Integer> taskIds;               // repeated, the task ids
   private List<Integer> attemptIds;            // repeated, the attempt ids
+
+  //In the case of adjust fetch mode single fetch is responsible from partitionId to endPartitionId
+  private int endPartitionId = -1;
 
   public FetchImpl() {
     builder = TajoWorkerProtocol.FetchProto.newBuilder();
@@ -62,19 +70,21 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
         proto.getRangeParams(),
         proto.getHasNext(),
         proto.getName(),
-        proto.getTaskIdList(), proto.getAttemptIdList());
+        proto.getTaskIdList(),
+        proto.getAttemptIdList(),
+        proto.getEndPartitionId());
   }
 
   public FetchImpl(QueryUnit.PullHost host, TajoWorkerProtocol.ShuffleType type, ExecutionBlockId executionBlockId,
                    int partitionId) {
     this(host, type, executionBlockId, partitionId, null, false, null,
-        new ArrayList<Integer>(), new ArrayList<Integer>());
+        new ArrayList<Integer>(), new ArrayList<Integer>(), -1);
   }
 
   public FetchImpl(QueryUnit.PullHost host, TajoWorkerProtocol.ShuffleType type, ExecutionBlockId executionBlockId,
                    int partitionId, List<QueryUnit.IntermediateEntry> intermediateEntryList) {
     this(host, type, executionBlockId, partitionId, null, false, null,
-        new ArrayList<Integer>(), new ArrayList<Integer>());
+        new ArrayList<Integer>(), new ArrayList<Integer>(), -1);
     for (QueryUnit.IntermediateEntry entry : intermediateEntryList){
       addPart(entry.getTaskId(), entry.getAttemptId());
     }
@@ -82,11 +92,13 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
 
   public FetchImpl(QueryUnit.PullHost host, TajoWorkerProtocol.ShuffleType type, ExecutionBlockId executionBlockId,
                    int partitionId, String rangeParams, boolean hasNext, String name,
-                   List<Integer> taskIds, List<Integer> attemptIds) {
+                   List<Integer> taskIds, List<Integer> attemptIds,
+                   int endPartitionId) {
     this.host = host;
     this.type = type;
     this.executionBlockId = executionBlockId;
     this.partitionId = partitionId;
+    this.endPartitionId = endPartitionId;
     this.rangeParams = rangeParams;
     this.hasNext = hasNext;
     this.name = name;
@@ -96,7 +108,8 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(host, type, executionBlockId, partitionId, name, rangeParams, hasNext, taskIds, attemptIds);
+    return Objects.hashCode(host, type, executionBlockId,
+        partitionId, endPartitionId, name, rangeParams, hasNext, taskIds, attemptIds);
   }
 
   @Override
@@ -119,6 +132,7 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
     Preconditions.checkArgument(taskIds.size() == attemptIds.size());
     builder.addAllTaskId(taskIds);
     builder.addAllAttemptId(attemptIds);
+    builder.setEndPartitionId(endPartitionId);
     return builder.build();
   }
 
@@ -175,14 +189,14 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
    * Get the pull server URIs.
    */
   public List<URI> getURIs(){
-    return Repartitioner.createFetchURL(this, true);
+    return createFetchURL(this, true);
   }
 
   /**
    * Get the pull server URIs without repeated parameters.
    */
   public List<URI> getSimpleURIs(){
-    return Repartitioner.createFetchURL(this, false);
+    return createFetchURL(this, false);
   }
 
   public String getName() {
@@ -199,6 +213,14 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
 
   public List<Integer> getAttemptIds() {
     return attemptIds;
+  }
+
+  public int getEndPartitionId() {
+    return endPartitionId;
+  }
+
+  public void setEndPartitionId(int endPartitionId) {
+    this.endPartitionId = endPartitionId;
   }
 
   public FetchImpl clone() throws CloneNotSupportedException {
@@ -218,6 +240,86 @@ public class FetchImpl implements ProtoObject<TajoWorkerProtocol.FetchProto>, Cl
     if (attemptIds != null) {
       newFetchImpl.attemptIds = Lists.newArrayList(attemptIds);
     }
+    newFetchImpl.endPartitionId = endPartitionId;
     return newFetchImpl;
+  }
+
+  public boolean isPartitionRanged() {
+    return getEndPartitionId() >= 0;
+  }
+
+  public static List<URI> createFetchURL(FetchImpl fetch, boolean includeParts) {
+    String scheme = "http://";
+
+    String partitionParam = String.valueOf(fetch.getPartitionId());
+    if (fetch.isPartitionRanged()) {
+      partitionParam += "-" + fetch.getEndPartitionId();
+    }
+    StringBuilder urlPrefix = new StringBuilder(scheme);
+    urlPrefix.append(fetch.getPullHost().getHost()).append(":").append(fetch.getPullHost().getPort()).append("/?")
+        .append("qid=").append(fetch.getExecutionBlockId().getQueryId().toString())
+        .append("&sid=").append(fetch.getExecutionBlockId().getId())
+        .append("&p=").append(partitionParam)
+        .append("&type=");
+    if (fetch.getType() == HASH_SHUFFLE) {
+      urlPrefix.append("h");
+    } else if (fetch.getType() == RANGE_SHUFFLE) {
+      urlPrefix.append("r").append("&").append(fetch.getRangeParams());
+    } else if (fetch.getType() == SCATTERED_HASH_SHUFFLE) {
+      urlPrefix.append("s");
+    }
+
+    List<URI> fetchURLs = new ArrayList<URI>();
+    if(includeParts) {
+      if (fetch.isPartitionRanged()) {
+        urlPrefix.append("&ta=all");
+        fetchURLs.add(URI.create(urlPrefix.toString()));
+      } else {
+        // If the get request is longer than 2000 characters,
+        // the long request uri may cause HTTP Status Code - 414 Request-URI Too Long.
+        // Refer to http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html#sec10.4.15
+        // The below code transforms a long request to multiple requests.
+        List<String> taskIdsParams = new ArrayList<String>();
+        StringBuilder taskIdListBuilder = new StringBuilder();
+        List<Integer> taskIds = fetch.getTaskIds();
+        List<Integer> attemptIds = fetch.getAttemptIds();
+        boolean first = true;
+
+        for (int i = 0; i < taskIds.size(); i++) {
+          StringBuilder taskAttemptId = new StringBuilder();
+
+          if (!first) { // when comma is added?
+            taskAttemptId.append(",");
+          } else {
+            first = false;
+          }
+
+          int taskId = taskIds.get(i);
+          int attemptId = attemptIds.get(i);
+          taskAttemptId.append(taskId).append("_").append(attemptId);
+
+          if (taskIdListBuilder.length() + taskAttemptId.length()
+              > HTTP_REQUEST_MAXIMUM_LENGTH) {
+            taskIdsParams.add(taskIdListBuilder.toString());
+            taskIdListBuilder = new StringBuilder(taskId + "_" + attemptId);
+          } else {
+            taskIdListBuilder.append(taskAttemptId);
+          }
+        }
+        // if the url params remain
+        if (taskIdListBuilder.length() > 0) {
+          taskIdsParams.add(taskIdListBuilder.toString());
+        }
+
+        urlPrefix.append("&ta=");
+        for (String param : taskIdsParams) {
+          fetchURLs.add(URI.create(urlPrefix + param));
+        }
+      }
+    } else {
+      fetchURLs.add(URI.create(urlPrefix.toString()));
+    }
+
+    return fetchURLs;
   }
 }

@@ -432,17 +432,43 @@ public class TajoPullServerService extends AbstractService {
 
         // if a subquery requires a hash shuffle or a scattered hash shuffle
       } else if (shuffleType.equals("h") || shuffleType.equals("s")) {
-        for (String ta : taskIds) {
-          if (!lDirAlloc.ifExists(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf)) {
-            LOG.warn(e);
+        if (taskIdList.size() == 1 && taskIdList.get(0).trim().equals("all")) {
+          int startPartId = Integer.parseInt(partId.split("-")[0]);
+          int endPartId = Integer.parseInt(partId.split("-")[1]);
+          for (Path eachPath: lDirAlloc.getAllLocalPathsToRead(queryBaseDir + "/" + sid, conf)) {
+            File taskAttemptParentPath = new File(eachPath.toUri().toString());
+            File[] taskAttemptPaths = taskAttemptParentPath.listFiles();
+            if (taskAttemptPaths == null || taskAttemptPaths.length == 0) {
+              continue;
+            }
+            for (File eachTaskAttemptPath: taskAttemptPaths) {
+              for (int i = startPartId; i < endPartId; i++) {
+                File file = new File(eachTaskAttemptPath, "/output/" +  i);
+                if (file.exists()) {
+                  FileChunk chunk = new FileChunk(file, 0, file.length());
+                  chunks.add(chunk);
+                }
+              }
+            }
+          }
+          if (chunks.isEmpty()) {
+            LOG.info("No intermediate data: " + queryBaseDir + "/" + sid);
             sendError(ctx, NO_CONTENT);
             return;
           }
-          Path path = localFS.makeQualified(
-              lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf));
-          File file = new File(path.toUri());
-          FileChunk chunk = new FileChunk(file, 0, file.length());
-          chunks.add(chunk);
+        } else {
+          for (String ta : taskIds) {
+            if (!lDirAlloc.ifExists(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf)) {
+              LOG.warn(e);
+              sendError(ctx, NO_CONTENT);
+              return;
+            }
+            Path path = localFS.makeQualified(
+                lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf));
+            File file = new File(path.toUri());
+            FileChunk chunk = new FileChunk(file, 0, file.length());
+            chunks.add(chunk);
+          }
         }
       } else {
         LOG.error("Unknown shuffle type: " + shuffleType);

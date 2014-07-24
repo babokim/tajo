@@ -687,22 +687,6 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
     }
 
     /**
-     * Getting the total memory of cluster
-     *
-     * @param subQuery
-     * @return mega bytes
-     */
-    private static int getClusterTotalMemory(SubQuery subQuery) {
-      List<TajoMasterProtocol.WorkerResourceProto> workers =
-          subQuery.context.getQueryMasterContext().getQueryMaster().getAllWorker();
-
-      int totalMem = 0;
-      for (TajoMasterProtocol.WorkerResourceProto worker : workers) {
-        totalMem += worker.getMemoryMB();
-      }
-      return totalMem;
-    }
-    /**
      * Getting the desire number of partitions according to the volume of input data.
      * This method is only used to determine the partition key number of hash join or aggregation.
      *
@@ -951,6 +935,23 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         subQuery.schedulerContext.setEstimatedTaskNum(estimatedTaskNum);
       }
     }
+  }
+
+  /**
+   * Getting the total memory of cluster
+   *
+   * @param subQuery
+   * @return mega bytes
+   */
+  public static int getClusterTotalMemory(SubQuery subQuery) {
+    List<TajoMasterProtocol.WorkerResourceProto> workers =
+        subQuery.context.getQueryMasterContext().getQueryMaster().getAllWorker();
+
+    int totalMem = 0;
+    for (TajoMasterProtocol.WorkerResourceProto worker : workers) {
+      totalMem += worker.getMemoryMB();
+    }
+    return totalMem;
   }
 
   public static void scheduleFragment(SubQuery subQuery, FileFragment fragment) {
