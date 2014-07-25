@@ -494,6 +494,9 @@ public class Task {
   }
 
   public void cleanupTask() {
+    if (taskRunnerContext == null) {
+      return;
+    }
     taskRunnerContext.addTaskHistory(getId(), createTaskHistory());
     taskRunnerContext.getTasks().remove(getId());
     taskRunnerContext = null;
