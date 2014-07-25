@@ -57,6 +57,8 @@ public abstract class ColPartitionStoreExec extends UnaryPhysicalExec {
 
     if (plan.getType() == NodeType.CREATE_TABLE) {
       this.outSchema = ((CreateTableNode)plan).getTableSchema();
+    } else if (plan.getType() == NodeType.INSERT) {
+      this.outSchema = ((InsertNode)plan).getTableSchema();
     }
 
     // set table meta

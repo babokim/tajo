@@ -717,13 +717,17 @@ public class Task {
     private QueryMasterProtocolService.Interface masterStub;
     private Thread pingThread;
     private AtomicBoolean stop = new AtomicBoolean(false);
-    private static final int PROGRESS_INTERVAL = 3000;
     private static final int MAX_RETRIES = 3;
     private QueryUnitAttemptId taskId;
+    private int interval;
 
     public Reporter(QueryUnitAttemptId taskId, QueryMasterProtocolService.Interface masterStub) {
       this.taskId = taskId;
       this.masterStub = masterStub;
+      this.interval = systemConf.getIntVar(TajoConf.ConfVars.TASK_HEARTBEAT_INTERVAL);
+      if (this.interval < 1000) {   //min value
+        this.interval = 1000;
+      }
     }
 
     Runnable createReporterThread() {
@@ -748,6 +752,7 @@ public class Task {
               } else {
                 masterStub.ping(null, taskId.getProto(), NullCallback.get());
               }
+              remainingRetries = MAX_RETRIES;
             } catch (Throwable t) {
               LOG.error(t.getMessage(), t);
               remainingRetries -=1;
@@ -760,7 +765,7 @@ public class Task {
               if (!context.isStopped() && remainingRetries > 0) {
                 synchronized (pingThread) {
                   try {
-                    pingThread.wait(PROGRESS_INTERVAL);
+                    pingThread.wait(interval);
                   } catch (InterruptedException e) {
                   }
                 }

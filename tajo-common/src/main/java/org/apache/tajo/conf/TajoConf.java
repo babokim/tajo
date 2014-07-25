@@ -298,6 +298,7 @@ public class TajoConf extends Configuration {
     WORKER_SERVICE_RPC_SERVER_WORKER_THREAD_NUM("tajo.worker.service.rpc.server.worker-thread-num",
         Runtime.getRuntime().availableProcessors() * 1),
 
+    TASK_HEARTBEAT_INTERVAL("tajo.task.heartbeat.interval-ms", 3000),
     //////////////////////////////////
     // The Below is reserved
     //////////////////////////////////
