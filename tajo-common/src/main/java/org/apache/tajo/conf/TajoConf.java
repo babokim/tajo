@@ -349,6 +349,7 @@ public class TajoConf extends Configuration {
     // ONLY FOR TESTCASE
     TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1),
 
+    COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi"),
     //JOB_SCHEDULER
     JOB_SCHEDULER_CLASS("tajo.job.scheduler.class", "org.apache.tajo.scheduler.SimpleFifoScheduler"),
     JOB_QUEUE_NAMES("tajo.job.queue.names", "default")

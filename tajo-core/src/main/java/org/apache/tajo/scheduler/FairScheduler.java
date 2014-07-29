@@ -280,15 +280,11 @@ public class FairScheduler extends AbstractScheduler {
         sb.append("<td align='right'>").append(queryProperty.getMinCapacity()).append("</td>");
         sb.append("<td align='right'>").append(queryProperty.getMaxCapacity()).append("</td>");
 
-        QuerySchedulingInfo runningQueryInfo = null;
         for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
           if (eachQueueName.equals(eachQuery.getAssignedQueueName())) {
-            runningQueryInfo = eachQuery;
+            runningQueryList += prefix + eachQuery.getQueryId() + ",";
             break;
           }
-        }
-        if (runningQueryInfo != null) {
-          runningQueryList += prefix + runningQueryInfo.getQueryId();
         }
 
         prefix = "";
