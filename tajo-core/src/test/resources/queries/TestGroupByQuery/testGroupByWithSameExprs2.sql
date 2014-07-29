@@ -4,4 +4,5 @@ from
   lineitem
 group by
   l_orderkey + l_partkey
-order by total1, total2;
+order by
+  total1, total2;

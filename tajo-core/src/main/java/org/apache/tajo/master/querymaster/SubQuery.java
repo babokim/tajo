@@ -769,7 +769,6 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         return taskNum;
         // Is this subquery the first step of group-by?
       } else if (grpNode != null) {
-
         boolean hasGroupColumns = true;
         if (grpNode.getType() == NodeType.GROUP_BY) {
           hasGroupColumns = ((GroupbyNode)grpNode).getGroupingColumns().length > 0;
@@ -837,10 +836,10 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       long volume = getInputVolume(subQuery.getMasterPlan(), subQuery.context, subQuery.getBlock());
 
       int mb = (int) Math.ceil((double)volume / 1048576);
-      LOG.info("Table's volume is approximately " + mb + " MB");
+      LOG.info(subQuery.getId() + ", Table's volume is approximately " + mb + " MB");
       // determine the number of task per 64MB
       int maxTaskNum = Math.max(1, (int) Math.ceil((double)mb / 64));
-      LOG.info("The determined number of non-leaf tasks is " + maxTaskNum);
+      LOG.info(subQuery.getId() + ", The determined number of non-leaf tasks is " + maxTaskNum);
       return maxTaskNum;
     }
 

@@ -56,13 +56,10 @@ import org.apache.tajo.worker.FetchImpl;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
-import java.net.URI;
 import java.util.*;
 import java.util.Map.Entry;
 
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.HASH_SHUFFLE;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.RANGE_SHUFFLE;
-import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.SCATTERED_HASH_SHUFFLE;
+import static org.apache.tajo.ipc.TajoWorkerProtocol.ShuffleType.*;
 
 /**
  * Repartitioner creates non-leaf tasks and shuffles intermediate data.
@@ -587,7 +584,9 @@ public class Repartitioner {
       determinedTaskNum = maxNum;
     }
 
-    LOG.info(subQuery.getId() + ", Try to divide " + mergedRange + " into " + determinedTaskNum +
+    // for LOG
+    TupleRange mergedRangeForPrint = TupleUtil.columnStatToRange(sortSpecs, sortSchema, totalStat.getColumnStats(), true);
+    LOG.info(subQuery.getId() + ", Try to divide " + mergedRangeForPrint + " into " + determinedTaskNum +
         " sub ranges (total units: " + determinedTaskNum + ")");
     TupleRange [] ranges = partitioner.partition(determinedTaskNum);
     if (ranges == null || ranges.length == 0) {
@@ -726,13 +725,22 @@ public class Repartitioner {
       }
     }
 
+    int groupingColumns = 0;
     GroupbyNode groupby = PlannerUtil.findMostBottomNode(subQuery.getBlock().getPlan(), NodeType.GROUP_BY);
+    if (groupby != null) {
+      groupingColumns = groupby.getGroupingColumns().length;
+    } else {
+      DistinctGroupbyNode dGroupby = PlannerUtil.findMostBottomNode(subQuery.getBlock().getPlan(), NodeType.DISTINCT_GROUP_BY);
+      if (dGroupby != null) {
+        groupingColumns = dGroupby.getGroupingColumns().length;
+      }
+    }
     // get a proper number of tasks
     int determinedTaskNum = Math.min(maxNum, finalFetches.size());
     LOG.info(subQuery.getId() + ", ScheduleHashShuffledFetches - Max num=" + maxNum +
         ", finalFetchURI(numPartitions)=" + finalFetches.size() + ", totalFetcher=" + numFetchImpl);
 
-    if (groupby != null && groupby.getGroupingColumns().length == 0) {
+    if (groupingColumns == 0) {
       determinedTaskNum = 1;
       LOG.info(subQuery.getId() + ", No Grouping Column - determinedTaskNum is set to 1");
     } else {
@@ -841,8 +849,8 @@ public class Repartitioner {
        SubQuery subQuery, Map<ExecutionBlockId, List<IntermediateEntry>> intermediates,
        String tableName) {
     int i = 0;
-    int splitVolume = QueryContext.getIntVar(subQuery.getMasterPlan().getContext(),
-        subQuery.getContext().getConf(), ConfVars.DIST_QUERY_TABLE_PARTITION_VOLUME);
+    long splitVolume = ((long) 1048576) * QueryContext.getIntVar(subQuery.getMasterPlan().getContext(),
+        subQuery.getContext().getConf(), ConfVars.DIST_QUERY_TABLE_PARTITION_VOLUME);// in bytes
 
     long sumNumBytes = 0L;
     Map<Integer, List<FetchImpl>> fetches = new HashMap<Integer, List<FetchImpl>>();

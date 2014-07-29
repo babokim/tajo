@@ -25,7 +25,6 @@ import org.apache.tajo.exception.InvalidCastException;
 import org.apache.tajo.exception.InvalidOperationException;
 import org.apache.tajo.util.MurmurHash;
 
-import java.util.Arrays;
 import java.util.Comparator;
 
 public class TextDatum extends Datum {

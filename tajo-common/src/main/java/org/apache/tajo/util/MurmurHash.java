@@ -18,9 +18,10 @@
 
 package org.apache.tajo.util;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-
+/**
+ * This class is borrowed from the following source code
+ * https://github.com/addthis/stream-lib/blob/master/src/main/java/com/clearspring/analytics/hash/MurmurHash.java
+ */
 public class MurmurHash {
   public static int hash(Object o) {
     if (o == null) {
