@@ -441,7 +441,9 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
         for (DataLocation location : queryUnitAttempt.getQueryUnit().getDataLocations()) {
           if (!this.getHost().equals(location.getHost())) {
             HostVolumeMapping volumeMapping = scheduledRequests.leafTaskHostMapping.get(location.getHost());
-            volumeMapping.removeQueryUnitAttempt(location.getVolumeId(), queryUnitAttempt);
+            if (volumeMapping != null) {
+              volumeMapping.removeQueryUnitAttempt(location.getVolumeId(), queryUnitAttempt);
+            }
           }
         }
       }
