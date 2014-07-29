@@ -470,17 +470,17 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
     String [] rightLineage = PlannerUtil.getRelationLineage(plan.getRightChild());
     long rightTableVolume = estimateSizeRecursive(context, rightLineage);
 
-    if (rightTableVolume <  QueryContext.getLongVar(context.getQueryContext(), conf,
-        ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD)) {
+    //if (rightTableVolume <  QueryContext.getLongVar(context.getQueryContext(), conf,
+    //    ConfVars.EXECUTOR_OUTER_JOIN_INMEMORY_HASH_THRESHOLD)) {
       // we can implement left outer join using hash join, using the right operand as the build relation
-      LOG.info("Left Outer Join (" + plan.getPID() +") chooses [Hash Join].");
+      LOG.info("Left Outer Join (" + plan.getPID() +") chooses [Hash Join], Right Table's size: " + rightTableVolume);
       return new HashLeftOuterJoinExec(context, plan, leftExec, rightExec);
-    }
-    else {
+    //}
+    //else {
       //the right operand is too large, so we opt for NL implementation of left outer join
-      LOG.info("Left Outer Join (" + plan.getPID() +") chooses [Nested Loop Join].");
-      return new NLLeftOuterJoinExec(context, plan, leftExec, rightExec);
-    }
+      //LOG.info("Left Outer Join (" + plan.getPID() +") chooses [Nested Loop Join].");
+      //return new NLLeftOuterJoinExec(context, plan, leftExec, rightExec);
+    //}
   }
 
   private PhysicalExec createBestRightJoinPlan(TaskAttemptContext context, JoinNode plan,

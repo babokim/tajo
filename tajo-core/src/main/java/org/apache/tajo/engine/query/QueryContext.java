@@ -202,6 +202,14 @@ public class QueryContext extends KeyValueSet {
     }
   }
 
+  public static String getVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
+    if (context.get(key.varname) != null) {
+      return context.get(key.varname);
+    } else {
+      return conf.getVar(key);
+    }
+  }
+
   public static Integer getIntVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
     if (context.get(key.varname) != null) {
       String val = context.get(key.varname);
@@ -227,6 +235,20 @@ public class QueryContext extends KeyValueSet {
       }
     } else {
       return conf.getLongVar(key);
+    }
+  }
+
+  public static Float getFloatVar(QueryContext context, TajoConf conf, TajoConf.ConfVars key) {
+    if (context.get(key.varname) != null) {
+      String val = context.get(key.varname);
+      try {
+        return Float.parseFloat(val);
+      } catch (NumberFormatException nfe) {
+        LOG.warn(nfe.getMessage());
+        return conf.getFloatVar(key);
+      }
+    } else {
+      return conf.getFloatVar(key);
     }
   }
 }

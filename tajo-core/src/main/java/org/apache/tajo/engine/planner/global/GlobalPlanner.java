@@ -297,7 +297,7 @@ public class GlobalPlanner {
       // Checking Left Side of Join
       if (ScanNode.isScanNode(leftNode)) {
         ScanNode scanNode = (ScanNode)leftNode;
-        if (getTableVolume(scanNode) >= broadcastThreshold) {
+        if (joinNode.getJoinType() == JoinType.LEFT_OUTER || getTableVolume(scanNode) >= broadcastThreshold) {
           numLargeTables++;
         } else {
           leftBroadcast = true;
@@ -310,7 +310,7 @@ public class GlobalPlanner {
       // Checking Right Side OF Join
       if (ScanNode.isScanNode(rightNode)) {
         ScanNode scanNode = (ScanNode)rightNode;
-        if (getTableVolume(scanNode) >= broadcastThreshold) {
+        if (joinNode.getJoinType() == JoinType.RIGHT_OUTER || getTableVolume(scanNode) >= broadcastThreshold) {
           numLargeTables++;
         } else {
           rightBroadcast = true;
@@ -828,8 +828,14 @@ public class GlobalPlanner {
     ExecutionBlock currentBlock;
 
     if (groupbyNode.isDistinct()) { // if there is at one distinct aggregation function
-      DistinctGroupbyBuilder builder = new DistinctGroupbyBuilder(this);
-      return builder.buildPlan(context, lastBlock, groupbyNode);
+      String algorithm = QueryContext.getVar(context.getPlan().getContext(), conf, ConfVars.COUNT_DISTINCT_ALGORITHM);
+
+      if (algorithm != null && algorithm.equals("single")) {
+        return buildGroupByIncludingDistinctFunctionsMultiStage(context, lastBlock, groupbyNode);
+      } else {
+        DistinctGroupbyBuilder builder = new DistinctGroupbyBuilder(this);
+        return builder.buildPlan(context, lastBlock, groupbyNode);
+      }
     } else {
       GroupbyNode firstPhaseGroupby = createFirstPhaseGroupBy(masterPlan.getLogicalPlan(), groupbyNode);
 

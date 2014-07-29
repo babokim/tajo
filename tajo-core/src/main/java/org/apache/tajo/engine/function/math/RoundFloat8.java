@@ -29,6 +29,8 @@ import org.apache.tajo.engine.function.annotation.Description;
 import org.apache.tajo.engine.function.annotation.ParamTypes;
 import org.apache.tajo.storage.Tuple;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.text.NumberFormat;
 
 /**
@@ -46,19 +48,11 @@ import java.text.NumberFormat;
         @ParamTypes(paramTypes = {TajoDataTypes.Type.INT8, TajoDataTypes.Type.INT4})}
 )
 public class RoundFloat8 extends GeneralFunction {
-  private NumberFormat numberFormat;
-  private boolean formatConstant;
-
   public RoundFloat8() {
     super(new Column[] {
         new Column("value", TajoDataTypes.Type.FLOAT8),
         new Column("roundPoint", TajoDataTypes.Type.INT4)
     });
-  }
-
-  @Override
-  public void init(FunctionEval.ParamType [] paramTypes) {
-    formatConstant = paramTypes[1] == FunctionEval.ParamType.CONSTANT;
   }
 
   @Override
@@ -70,23 +64,9 @@ public class RoundFloat8 extends GeneralFunction {
       return NullDatum.get();
     }
 
-    if (numberFormat == null || !formatConstant) {
-      numberFormat = NumberFormat.getInstance();
-      numberFormat.setGroupingUsed(false);
-      numberFormat.setMaximumFractionDigits(roundDatum.asInt4());
-    }
-
     double value = valueDatum.asFloat8();
     int roundPnt = roundDatum.asInt4();
-    double roundNum;
 
-    if (value > 0) {
-      roundNum = (long)(value * Math.pow(10, roundPnt) + 0.5d) / Math.pow(10, roundPnt);
-    }
-    else {
-      roundNum = (long)(value * Math.pow(10, roundPnt) - 0.5d) / Math.pow(10, roundPnt);
-    }
-
-    return DatumFactory.createText(numberFormat.format(roundNum));
+    return DatumFactory.createFloat8(BigDecimal.valueOf(value).setScale(roundPnt, RoundingMode.HALF_UP).doubleValue());
   }
 }

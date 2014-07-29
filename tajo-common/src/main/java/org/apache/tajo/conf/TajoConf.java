@@ -251,6 +251,8 @@ public class TajoConf extends Configuration {
 
     DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb", 256),
 
+    DIST_QUERY_CLUSTER_SLOT_MAX_RATIO("tajo.dist-query.cluster-slot.max-ratio", 1.0f),
+
     //////////////////////////////////
     // Physical Executors
     //////////////////////////////////
@@ -296,6 +298,7 @@ public class TajoConf extends Configuration {
     WORKER_SERVICE_RPC_SERVER_WORKER_THREAD_NUM("tajo.worker.service.rpc.server.worker-thread-num",
         Runtime.getRuntime().availableProcessors() * 1),
 
+    TASK_HEARTBEAT_INTERVAL("tajo.task.heartbeat.interval-ms", 3000),
     //////////////////////////////////
     // The Below is reserved
     //////////////////////////////////

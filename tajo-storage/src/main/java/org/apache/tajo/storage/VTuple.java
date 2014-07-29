@@ -23,6 +23,7 @@ import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.Inet4Datum;
 import org.apache.tajo.datum.NullDatum;
 import org.apache.tajo.exception.UnimplementedException;
+import org.apache.tajo.util.MurmurHash;
 
 import java.net.InetAddress;
 import java.util.Arrays;
@@ -204,7 +205,7 @@ public class VTuple implements Tuple, Cloneable {
 	@Override
 	public int hashCode() {
 	  return Arrays.hashCode(values);
-	}
+  }
 
   @Override
   public Datum[] getValues() {

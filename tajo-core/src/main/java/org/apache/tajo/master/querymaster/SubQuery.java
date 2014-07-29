@@ -48,10 +48,8 @@ import org.apache.tajo.engine.planner.PlannerUtil;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.planner.global.ExecutionBlock;
 import org.apache.tajo.engine.planner.global.MasterPlan;
-import org.apache.tajo.engine.planner.logical.GroupbyNode;
-import org.apache.tajo.engine.planner.logical.NodeType;
-import org.apache.tajo.engine.planner.logical.ScanNode;
-import org.apache.tajo.engine.planner.logical.StoreTableNode;
+import org.apache.tajo.engine.planner.logical.*;
+import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.TajoMasterProtocol;
 import org.apache.tajo.master.*;
 import org.apache.tajo.master.TaskRunnerGroupEvent.EventType;
@@ -682,22 +680,6 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
     }
 
     /**
-     * Getting the total memory of cluster
-     *
-     * @param subQuery
-     * @return mega bytes
-     */
-    private static int getClusterTotalMemory(SubQuery subQuery) {
-      List<TajoMasterProtocol.WorkerResourceProto> workers =
-          subQuery.context.getQueryMasterContext().getQueryMaster().getAllWorker();
-
-      int totalMem = 0;
-      for (TajoMasterProtocol.WorkerResourceProto worker : workers) {
-        totalMem += worker.getMemoryMB();
-      }
-      return totalMem;
-    }
-    /**
      * Getting the desire number of partitions according to the volume of input data.
      * This method is only used to determine the partition key number of hash join or aggregation.
      *
@@ -709,9 +691,12 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       MasterPlan masterPlan = subQuery.getMasterPlan();
       ExecutionBlock parent = masterPlan.getParent(subQuery.getBlock());
 
-      GroupbyNode grpNode = null;
+      LogicalNode grpNode = null;
       if (parent != null) {
         grpNode = PlannerUtil.findMostBottomNode(parent.getPlan(), NodeType.GROUP_BY);
+        if (grpNode == null) {
+          grpNode = PlannerUtil.findMostBottomNode(parent.getPlan(), NodeType.DISTINCT_GROUP_BY);
+        }
       }
 
       // We assume this execution block the first stage of join if two or more tables are included in this block,
@@ -733,14 +718,19 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         int mb = (int) Math.ceil((double) bigger / 1048576);
         LOG.info(subQuery.getId() + ", Bigger Table's volume is approximately " + mb + " MB");
 
-        int taskNum = (int) Math.ceil((double) mb /
-            conf.getIntVar(ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME));
+        int taskNum = (int) Math.ceil((double) mb / QueryContext.getIntVar(subQuery.getContext().getQueryContext(),
+            conf, ConfVars.DIST_QUERY_JOIN_PARTITION_VOLUME));
 
         int totalMem = getClusterTotalMemory(subQuery);
         LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
         int slots = Math.max(totalMem / conf.getIntVar(ConfVars.TASK_DEFAULT_MEMORY), 1);
+
+        int maxSlots = (int)(slots * conf.getFloatVar(ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO));
+        QueryContext.getFloatVar(subQuery.getContext().getQueryContext(), conf,
+            ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO);
+
         // determine the number of task
-        taskNum = Math.min(taskNum, slots);
+        taskNum = Math.min(taskNum, maxSlots);
 
         if (conf.getIntVar(ConfVars.TESTCASE_MIN_TASK_NUM) > 0) {
           taskNum = conf.getIntVar(ConfVars.TESTCASE_MIN_TASK_NUM);
@@ -772,8 +762,13 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         return taskNum;
         // Is this subquery the first step of group-by?
       } else if (grpNode != null) {
-
-        if (grpNode.getGroupingColumns().length == 0) {
+        boolean hasGroupColumns = true;
+        if (grpNode.getType() == NodeType.GROUP_BY) {
+          hasGroupColumns = ((GroupbyNode)grpNode).getGroupingColumns().length > 0;
+        } else if (grpNode.getType() == NodeType.DISTINCT_GROUP_BY) {
+          hasGroupColumns = ((DistinctGroupbyNode)grpNode).getGroupingColumns().length > 0;
+        }
+        if (!hasGroupColumns) {
           return 1;
         } else {
           long volume = getInputVolume(subQuery.masterPlan, subQuery.context, subQuery.block);
@@ -782,13 +777,18 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
           LOG.info(subQuery.getId() + ", Table's volume is approximately " + mb + " MB");
           // determine the number of task
           int taskNumBySize = (int) Math.ceil((double) mb /
-              conf.getIntVar(ConfVars.DIST_QUERY_GROUPBY_PARTITION_VOLUME));
-
+          QueryContext.getLongVar(subQuery.getContext().getQueryContext(), conf,
+              ConfVars.DIST_QUERY_GROUPBY_PARTITION_VOLUME));
           int totalMem = getClusterTotalMemory(subQuery);
 
           LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
           int slots = Math.max(totalMem / conf.getIntVar(ConfVars.TASK_DEFAULT_MEMORY), 1);
-          int taskNum = Math.min(taskNumBySize, slots); //Maximum partitions
+
+          int maxSlots = (int)(slots * conf.getFloatVar(ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO));
+          QueryContext.getFloatVar(subQuery.getContext().getQueryContext(), conf,
+              ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO);
+
+          int taskNum = Math.min(taskNumBySize, maxSlots); //Maximum partitions
           LOG.info(subQuery.getId() + ", The determined number of aggregation partitions is " + taskNum);
           return taskNum;
         }
@@ -829,10 +829,10 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
       long volume = getInputVolume(subQuery.getMasterPlan(), subQuery.context, subQuery.getBlock());
 
       int mb = (int) Math.ceil((double)volume / 1048576);
-      LOG.info("Table's volume is approximately " + mb + " MB");
+      LOG.info(subQuery.getId() + ", Table's volume is approximately " + mb + " MB");
       // determine the number of task per 64MB
       int maxTaskNum = Math.max(1, (int) Math.ceil((double)mb / 64));
-      LOG.info("The determined number of non-leaf tasks is " + maxTaskNum);
+      LOG.info(subQuery.getId() + ", The determined number of non-leaf tasks is " + maxTaskNum);
       return maxTaskNum;
     }
 
@@ -928,6 +928,23 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         subQuery.schedulerContext.setEstimatedTaskNum(estimatedTaskNum);
       }
     }
+  }
+
+  /**
+   * Getting the total memory of cluster
+   *
+   * @param subQuery
+   * @return mega bytes
+   */
+  public static int getClusterTotalMemory(SubQuery subQuery) {
+    List<TajoMasterProtocol.WorkerResourceProto> workers =
+        subQuery.context.getQueryMasterContext().getQueryMaster().getAllWorker();
+
+    int totalMem = 0;
+    for (TajoMasterProtocol.WorkerResourceProto worker : workers) {
+      totalMem += worker.getMemoryMB();
+    }
+    return totalMem;
   }
 
   public static void scheduleFragment(SubQuery subQuery, FileFragment fragment) {

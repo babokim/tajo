@@ -21,6 +21,7 @@ package org.apache.tajo.storage;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.NullDatum;
+import org.apache.tajo.util.MurmurHash;
 
 import java.util.Arrays;
 

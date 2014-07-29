@@ -138,6 +138,15 @@ public class TestSelectQuery extends QueryTestCaseBase {
     cleanupQuery(res);
   }
 
+  @Test
+  public final void testSelectColumnAliasExistingInRelation3() throws Exception {
+    // This is a reproduction code and validator of TAJO-975 Bug
+    // Please see TAJO-975 in order to know this test in detail.
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
 
   @Test
   public final void testSelectSameConstantsWithDifferentAliases() throws Exception {
@@ -469,5 +478,45 @@ public class TestSelectQuery extends QueryTestCaseBase {
           ConfVars.TESTCASE_MIN_TASK_NUM.defaultVal);
       executeString("DROP TABLE table11 PURGE");
     }
+  }
+
+  @Test
+  public void testCaseWhenRound() throws Exception {
+    ResultSet res = executeString(
+        "select * from (select n_nationkey as key, " +
+            "case when n_nationkey < 6 then round((n_nationkey * 100 / 2.453)::float4 / (n_regionkey + 1)::float4 * 100, 2) else 100.0 end as val " +
+            "from nation) a order by a.key"
+    );
+
+    String expected = "key,val\n" +
+        "-------------------------------\n" +
+        "0,0.0\n" +
+        "1,2038.32\n" +
+        "2,4076.64\n" +
+        "3,6114.96\n" +
+        "4,3261.31\n" +
+        "5,20383.21\n" +
+        "6,100.0\n" +
+        "7,100.0\n" +
+        "8,100.0\n" +
+        "9,100.0\n" +
+        "10,100.0\n" +
+        "11,100.0\n" +
+        "12,100.0\n" +
+        "13,100.0\n" +
+        "14,100.0\n" +
+        "15,100.0\n" +
+        "16,100.0\n" +
+        "17,100.0\n" +
+        "18,100.0\n" +
+        "19,100.0\n" +
+        "20,100.0\n" +
+        "21,100.0\n" +
+        "22,100.0\n" +
+        "23,100.0\n" +
+        "24,100.0\n";
+
+    assertEquals(expected, resultSetToString(res));
+    res.close();
   }
 }

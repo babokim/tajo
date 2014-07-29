@@ -634,7 +634,7 @@ public class QueryUnit implements EventHandler<TaskEvent> {
     return this.intermediateData;
   }
 
-  public static class PullHost {
+  public static class PullHost implements Cloneable {
     String host;
     int port;
     public PullHost(String pullServerAddr, int pullServerPort){
@@ -666,6 +666,14 @@ public class QueryUnit implements EventHandler<TaskEvent> {
       }
 
       return false;
+    }
+
+    @Override
+    public PullHost clone() throws CloneNotSupportedException {
+      PullHost newPullHost = (PullHost) super.clone();
+      newPullHost.host = host;
+      newPullHost.port = port;
+      return newPullHost;
     }
   }
 

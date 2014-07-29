@@ -117,7 +117,6 @@ public class Task {
         }
       };
 
-  
   static final ThreadLocal<NumberFormat> OUTPUT_FILE_FORMAT_SEQ =
       new ThreadLocal<NumberFormat>() {
         @Override

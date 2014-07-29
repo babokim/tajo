@@ -22,6 +22,9 @@ import com.google.common.collect.Maps;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.benchmark.TPCH;
+import org.apache.tajo.datum.Datum;
+import org.apache.tajo.datum.TextDatum;
+import org.apache.tajo.storage.VTuple;
 import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.storage.StorageConstants;
@@ -29,8 +32,10 @@ import org.apache.tajo.util.FileUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.sql.ResultSet;
-import java.util.Map;
+import java.util.*;
 
 public class TpchTestBase {
   private static final Log LOG = LogFactory.getLog(TpchTestBase.class);
@@ -113,5 +118,57 @@ public class TpchTestBase {
     } catch (InterruptedException e) {
     }
     util.shutdown();
+  }
+
+  public static void main(String[] args) throws Exception {
+//    2G,  291,  1,  68,  0.06076281,  1.9411764,  0.18860412286777123,  1.0,  14,  31.43,  5.29,  3.22,  1.0
+//    3G,  290,  1,  6967,  0.43987042,  111.90929,  19.892839910073643,  9.43419,  25,  0.01,  11.72,  0.04,  1.04
+//    3G,  588,  1,  3460,  3.365571,  55.407227,  4.830775134136222,  1.9734104,  3,  0.51,  11.33,  0.06,  1.0
+//    4G,  53,  1,  2700545,  6.1362023,  36.1312,  4.191398728466538,  3.0741665,  1157961,  4.48,  88.82,  2.56,  2.45
+//    4G,  587,  1,  556420,  1.977377,  34.175583,  4.207105154379785,  5.1599026,  365554,  0.74,  94.24,  2.79,  4.09
+//    4G,  730,  1,  4423,  2.7834828,  31.77436,  1.3690284016605097,  1.0633055,  2042,  1.93,  24.01,  0.83,  1.08
+//    3G,  676,  3,  106,  0.93941295,  20.679245,  1.870117138691668,  1.5566038,  ,  ,  ,  ,
+//    4G,  161,  3,  32,  7.997549,  62.875,  1.793029048666358,  1.40625,  21,  27.72,  67.38,  1.91,  1.24
+//    4G,  459,  3,  418,  0.57909596,  15.023924,  0.9739821776533812,  1.3229665,  279,  0.55,  56.88,  1.17,  1.23
+
+    String[][] data = new String[][]{
+        {"2G", "291", "1"},
+        {"3G", "290", "1"},
+        {"3G", "588", "1"},
+        {"4G", "53", "1"},
+        {"4G", "587", "1"},
+        {"4G", "730", "1"},
+        {"3G", "676", "3"},
+        {"4G", "161", "3"},
+        };
+
+    Random rand = new Random();
+    data = new String[1000][];
+    String[] networks = new String[]{"2G", "3G", "4G"};
+    String[] sex = new String[]{"1", "2"};
+
+    for (int i = 0; i < 1000; i++) {
+      data[i] = new String[]{ networks[rand.nextInt(3)], String.valueOf(rand.nextInt(500) + 1), sex[rand.nextInt(2)]};
+    }
+
+    int numPartitions = 62;
+    Set<Integer> ids = new TreeSet<Integer>();
+    for (int i = 0; i < data.length; i++) {
+      VTuple vtuple = new VTuple(new Datum[]{new TextDatum(data[i][0]), new TextDatum(data[i][1]), new TextDatum(data[i][2])});
+
+      String aaa = data[i][0] + data[i][1] + data[i][2];
+      int hashValue = vtuple.hashCode();
+//      int hashValue = MurmurHash.hash(aaa.getBytes(), 62);
+
+      int hashValue2 = (hashValue & Integer.MAX_VALUE) % (numPartitions == 32 ? numPartitions-1 : numPartitions);
+
+      ids.add(hashValue2);
+      System.out.println(hashValue + "," + hashValue2 + "," + vtuple);
+    }
+
+    System.out.println("==================:" + ids.size());
+    for (Integer id: ids) {
+      System.out.println(id);
+    }
   }
 }
