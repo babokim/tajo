@@ -633,7 +633,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
           break;
         }
         ExecutionBlockId executionBlockId = request.event.getExecutionBlockId();
-        SubQueryState state = queryTaskContext.getSubQuery(executionBlockId).getState();
+        SubQueryState state = queryTaskContext.getSubQuery(executionBlockId).getState(true);
 
         /* for scheduler */
 
