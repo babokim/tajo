@@ -283,7 +283,6 @@ public class FairScheduler extends AbstractScheduler {
         for (QuerySchedulingInfo eachQuery : runningQueries.values()) {
           if (eachQueueName.equals(eachQuery.getAssignedQueueName())) {
             runningQueryList += prefix + eachQuery.getQueryId() + ",";
-            break;
           }
         }
 
