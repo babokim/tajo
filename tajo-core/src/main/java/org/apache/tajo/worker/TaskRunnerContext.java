@@ -263,10 +263,14 @@ public class TaskRunnerContext {
     return fetcherExecutor;
   }
 
+  public static String getBaseDir(ExecutionBlockId executionBlockId){
+    return executionBlockId.getQueryId().toString() + "/output" + "/" + executionBlockId.getId();
+  }
+
   // for the local temporal dir
   public Path getBaseDir() throws IOException {
     // the base dir for an output dir
-    String baseDir = executionBlockId.getQueryId().toString() + "/output" + "/" + executionBlockId.getId();
+    String baseDir = getBaseDir(executionBlockId);
     Path baseDirPath = localFS.makeQualified(lDirAllocator.getLocalPathForWrite(baseDir, systemConf));
     LOG.info("TaskRunnerContext basedir is created (" + baseDir +")");
     return baseDirPath;

@@ -157,4 +157,14 @@ public class TajoWorkerManagerService extends CompositeService
     workerContext.cleanup(new QueryId(request).toString());
     done.run(TajoWorker.TRUE_PROTO);
   }
+
+  @Override
+  public void cleanupExecutionBlocks(RpcController controller, TajoWorkerProtocol.ExecutionBlockListProto request,
+                                     RpcCallback<PrimitiveProtos.BoolProto> done) {
+    for (TajoIdProtos.ExecutionBlockIdProto executionBlockIdProto : request.getExecutionBlockIdList()) {
+      String executionBlockDir = TaskRunnerContext.getBaseDir(new ExecutionBlockId(executionBlockIdProto));
+      workerContext.cleanup(executionBlockDir);
+    }
+    done.run(TajoWorker.TRUE_PROTO);
+  }
 }
