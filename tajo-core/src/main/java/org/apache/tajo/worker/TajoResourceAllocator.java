@@ -634,7 +634,7 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
         }
         ExecutionBlockId executionBlockId = request.event.getExecutionBlockId();
         SubQueryState state = queryTaskContext.getSubQuery(executionBlockId).getState(true);
-
+        int remainingTask = allocator.queryTaskContext.getSubQuery(executionBlockId).getTaskScheduler().remainingScheduledObjectNum();
         /* for scheduler */
 
         int resources = request.event.getRequiredNum();
@@ -646,8 +646,13 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
             LOG.debug(String.format("runningInQueue: %d, MaxCapacity: %d", request.runningInQueue, request.queueProperty.getMaxCapacity()));
           }
           int demandSize = (int) Math.floor(request.queueProperty.getMaxCapacity() / request.runningInQueue);
-          resources = Math.min(request.event.getRequiredNum(), demandSize);
+          int availableSize = request.queueProperty.getMaxCapacity() - allocatedSize.get();
+          demandSize = Math.max(availableSize, demandSize);
+
+          resources = Math.min(resources, demandSize);
           request.updatedTime = System.currentTimeMillis();
+        } else {
+          resources = resources - allocatedSize.get();
         }
 
         try {
@@ -656,18 +661,15 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
             if(LOG.isDebugEnabled()){
               LOG.debug("Retry to allocate containers executionBlockId : " + request.event.getExecutionBlockId());
             }
-            int remainingTask = allocator.queryTaskContext.getSubQuery(executionBlockId).getTaskScheduler().remainingScheduledObjectNum();
 
             if (remainingTask <= 0) {
               // in order to reallocate, if a QueryUnitAttempt was failure
               LOG.debug("All Allocated. executionBlockId : " + request.event.getExecutionBlockId());
             } else {
-              int availableSize = resources - allocatedSize.get();
+              int determinedResources = Math.min(remainingTask * 2, resources); // for tail tasks
               if(LOG.isDebugEnabled()){
                 LOG.debug(String.format("requiredNum: %d, allocatedSize: %d, remainingTask: %d", resources, allocatedSize.get(), remainingTask));
               }
-              resources = Math.min(remainingTask * 2, resources); // for tail tasks
-              int determinedResources  = Math.min(resources, availableSize);
               allocateContainers(request, determinedResources);
             }
 
