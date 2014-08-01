@@ -646,7 +646,8 @@ public class TajoResourceAllocator extends AbstractResourceAllocator {
             LOG.debug(String.format("runningInQueue: %d, MaxCapacity: %d", request.runningInQueue, request.queueProperty.getMaxCapacity()));
           }
           int demandSize = (int) Math.floor(request.queueProperty.getMaxCapacity() / request.runningInQueue);
-          int availableSize = request.queueProperty.getMaxCapacity() - allocatedSize.get();
+          int share = request.queueProperty.getMinCapacity() * (request.runningInQueue - 1);
+          int availableSize = request.queueProperty.getMaxCapacity() - share - allocatedSize.get();
           demandSize = Math.max(availableSize, demandSize);
 
           resources = Math.min(resources, demandSize);
