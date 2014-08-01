@@ -840,10 +840,12 @@ public class Repartitioner {
     for (int[] eachRange: partitionRanges) {
       Set<QueryUnit.PullHost> uniqPullHost = new HashSet<QueryUnit.PullHost>();
       for (int i = eachRange[0]; i < eachRange[1]; i++) {
-        Collection<FetchImpl> fetchList = finalFetches.get(i).fetchUrls;
-        if (fetchList == null) {
+        FetchGroupMeta fetchGroupMeta  = finalFetches.get(i);
+        if (fetchGroupMeta == null) {
           continue;
         }
+
+        Collection<FetchImpl> fetchList = fetchGroupMeta.fetchUrls;
         for (FetchImpl eachFetch: fetchList) {
           if (uniqPullHost.contains(eachFetch.getPullHost())) {
             continue;
