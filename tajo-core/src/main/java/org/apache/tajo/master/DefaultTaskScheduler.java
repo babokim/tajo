@@ -639,6 +639,8 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
       if (hostVolumeMapping != null) { //tajo host is located in hadoop datanode
         for (int i = 0; i < hostVolumeMapping.getRemainingLocalTaskSize(); i++) {
           QueryUnitAttemptId attemptId = hostVolumeMapping.getLocalTask(containerId);
+
+          if(attemptId == null) break;
           //find remaining local task
           if (leafTasks.contains(attemptId)) {
             leafTasks.remove(attemptId);
