@@ -669,7 +669,7 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
         });
 
         for (HostVolumeMapping tasks : remainingTasks) {
-          while (tasks.getRemainingLocalTaskSize() > 0){
+          for (int i = 0; i < tasks.getRemainingLocalTaskSize(); i++) {
             QueryUnitAttemptId tId = tasks.getQueryUnitAttemptIdByRack(rack);
 
             if (tId == null) break;
