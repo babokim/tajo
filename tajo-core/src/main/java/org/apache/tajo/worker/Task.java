@@ -690,10 +690,7 @@ public class Task {
 
   public static Path getTaskAttemptDir(QueryUnitAttemptId quid) {
     Path workDir =
-        StorageUtil.concatPath(
-            quid.getQueryUnitId().getExecutionBlockId().getQueryId().toString(),
-            "in",
-            quid.getQueryUnitId().getExecutionBlockId().toString(),
+        StorageUtil.concatPath(TaskRunnerContext.getBaseInputDir(quid.getQueryUnitId().getExecutionBlockId()),
             String.valueOf(quid.getQueryUnitId().getId()),
             String.valueOf(quid.getId()));
     return workDir;

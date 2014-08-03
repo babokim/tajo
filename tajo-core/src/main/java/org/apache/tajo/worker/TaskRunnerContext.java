@@ -40,6 +40,7 @@ import org.apache.tajo.rpc.NettyClientBase;
 import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.rpc.RpcChannelFactory;
 import org.apache.tajo.rpc.RpcConnectionPool;
+import org.apache.tajo.storage.StorageUtil;
 import org.apache.tajo.util.ApplicationIdUtils;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 
@@ -264,7 +265,7 @@ public class TaskRunnerContext {
   }
 
   public static String getBaseDir(ExecutionBlockId executionBlockId){
-    return executionBlockId.getQueryId().toString() + "/output" + "/" + executionBlockId.getId();
+    return getBaseOutputDir(executionBlockId).toString();
   }
 
   // for the local temporal dir
@@ -274,6 +275,24 @@ public class TaskRunnerContext {
     Path baseDirPath = localFS.makeQualified(lDirAllocator.getLocalPathForWrite(baseDir, systemConf));
     LOG.info("TaskRunnerContext basedir is created (" + baseDir +")");
     return baseDirPath;
+  }
+
+  public static Path getBaseOutputDir(ExecutionBlockId executionBlockId) {
+    Path workDir =
+        StorageUtil.concatPath(
+            executionBlockId.getQueryId().toString(),
+            "output",
+            String.valueOf(executionBlockId.getId()));
+    return workDir;
+  }
+
+  public static Path getBaseInputDir(ExecutionBlockId executionBlockId) {
+    Path workDir =
+        StorageUtil.concatPath(
+            executionBlockId.getQueryId().toString(),
+            "in",
+            executionBlockId.toString());
+    return workDir;
   }
 
   public ExecutionBlockId getExecutionBlockId() {
