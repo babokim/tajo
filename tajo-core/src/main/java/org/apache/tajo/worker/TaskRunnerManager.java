@@ -24,6 +24,7 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.LocalDirAllocator;
 import org.apache.hadoop.service.CompositeService;
 import org.apache.hadoop.yarn.event.Dispatcher;
 import org.apache.hadoop.yarn.event.EventHandler;
@@ -55,6 +56,7 @@ public class TaskRunnerManager extends CompositeService implements EventHandler<
   private Dispatcher dispatcher;
   // for task
   private ExecutorService taskExecutor;
+  private LocalDirAllocator lDirAllocator;
 
   public TaskRunnerManager(TajoWorker.WorkerContext workerContext, Dispatcher dispatcher) {
     super(TaskRunnerManager.class.getName());
@@ -76,6 +78,8 @@ public class TaskRunnerManager extends CompositeService implements EventHandler<
     ThreadFactoryBuilder builder = new ThreadFactoryBuilder();
     ThreadFactory taskFactory = builder.setNameFormat("Task executor #%d").build();
     taskExecutor = Executors.newFixedThreadPool(tajoConf.getIntVar(TajoConf.ConfVars.WORKER_EXECUTION_MAX_SLOTS), taskFactory);
+    // initialize LocalDirAllocator
+    lDirAllocator = new LocalDirAllocator(TajoConf.ConfVars.WORKER_TEMPORAL_DIR.varname);
     super.init(tajoConf);
   }
 
@@ -122,6 +126,10 @@ public class TaskRunnerManager extends CompositeService implements EventHandler<
     if(workerContext.isYarnContainerMode()) {
       stop();
     }
+  }
+
+  public LocalDirAllocator getLocalDirAllocator() {
+    return lDirAllocator;
   }
 
   public Collection<TaskRunner> getTaskRunners() {
