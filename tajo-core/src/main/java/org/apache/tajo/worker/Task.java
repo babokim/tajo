@@ -645,7 +645,7 @@ public class Task {
     if (remainFetcher == 0) {
       context.setProgress(FETCHER_PROGRESS);
     } else {
-      context.setProgress(adjustFetchProcess(fetcherSize, remainFetcher));
+      context.setFetcherProgress(adjustFetchProcess(fetcherSize, remainFetcher));
     }
   }
 
