@@ -372,10 +372,12 @@ public class TaskRunnerContext {
                 masterStub.ping(null, getExecutionBlockId().getProto(), NullCallback.get());
               } else {
                 for (Task task : new ArrayList<Task>(tasks.values())){
-                  task.updateProgress();
 
                   if(task.isProgressChanged()){
+                    task.updateProgress();
                     masterStub.statusUpdate(null, task.getReport(), NullCallback.get());
+                  } else {
+                    task.updateProgress();
                   }
                 }
               }

@@ -643,7 +643,7 @@ public class Task {
 
     int remainFetcher = (int)(ctx.getFetchLatch().getCount());
     if (remainFetcher == 0) {
-      context.setProgress(FETCHER_PROGRESS);
+      context.setFetcherProgress(FETCHER_PROGRESS);
     } else {
       context.setFetcherProgress(adjustFetchProcess(fetcherSize, remainFetcher));
     }
