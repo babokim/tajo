@@ -20,6 +20,7 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 
 <%@ page import="org.apache.tajo.QueryId" %>
+<%@ page import="org.apache.tajo.ExecutionBlockId" %>
 <%@ page import="org.apache.tajo.master.querymaster.Query" %>
 <%@ page import="org.apache.tajo.master.querymaster.QueryMaster" %>
 <%@ page import="org.apache.tajo.master.querymaster.QueryMasterTask" %>
@@ -29,9 +30,8 @@
 <%@ page import="org.apache.tajo.webapp.StaticHttpServer" %>
 <%@ page import="org.apache.tajo.worker.TajoWorker" %>
 <%@ page import="org.apache.tajo.ipc.TajoWorkerProtocol.QueryProfileDataListProto" %>
-<%@ page import="org.apache.tajo.ipc.TajoWorkerProtocol.QueryProfileDataListProto.EBQueryProfileData" %>
-<%@ page import="java.text.SimpleDateFormat" %>
 <%@ page import="java.util.List" %>
+<%@ page import="java.util.ArrayList" %>
 
 <%
   QueryId queryId = TajoIdUtils.parseQueryId(request.getParameter("queryId"));
@@ -40,10 +40,28 @@
   QueryMaster queryMaster = tajoWorker.getWorkerContext().getQueryMasterManagerService().getQueryMaster();
   List<QueryProfileDataListProto> profileData = queryMaster.getQueryProfileData(queryId);
 
+  QueryMasterTask queryMasterTask = queryMaster.getQueryMasterTask(queryId, true);
+
+
   if (profileData == null || profileData.isEmpty()) {
     out.write("<script type='text/javascript'>alert('no query profile data'); history.back(0); </script>");
     return;
   }
+
+  if (queryMasterTask == null) {
+    out.write("<script type='text/javascript'>alert('no query'); history.back(0); </script>");
+    return;
+  }
+
+  Query query = queryMasterTask.getQuery();
+  List<SubQuery> subQueries = null;
+  if (query != null) {
+    subQueries = JSPUtil.sortSubQuery(query.getSubQueries());
+  }
+
+  List<ExecutionBlockId> ebIds = new ArrayList<ExecutionBlockId>();
+  for (SubQuery subQuery:subQueries)
+    ebIds.add(subQuery.getId());
 %>
 
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
@@ -51,16 +69,13 @@
 <head>
   <link rel="stylesheet" type="text/css" href="/static/style.css"/>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-  <title>Query Detail Info</title>
+  <title>Query Profile JSON</title>
 </head>
 <body>
-<%@ include file="header.jsp"%>
 <div class='contents'>
-  <h2>Tajo Worker: <a href='index.jsp'><%=tajoWorker.getWorkerContext().getWorkerName()%></a></h2>
   <hr/>
-  <h3><%=queryId.toString()%> <a href='querydetail.jsp?queryId=<%=queryId%>'>[Query Detail]</a><a href='profilejson.jsp?queryId=<%=queryId%>'>[JSON]</a></h3>
   <pre>
-  <%=JSPUtil.profileToString(profileData)%>
+  <%=JSPUtil.profileToJSONString(profileData, ebIds)%>
   </pre>
 </div>
 </body>
