@@ -303,11 +303,13 @@ public class TaskAttemptContext {
   public float getProgress() {
     return this.progress;
   }
-  
+
   public void setProgress(float progress) {
     float previousProgress = this.progress;
     this.progress = progress;
-    progressChanged.set(previousProgress != progress);
+    if (previousProgress != progress) {
+      progressChanged.set(true);
+    }
   }
 
   public boolean isProgressChanged() {
@@ -315,6 +317,7 @@ public class TaskAttemptContext {
   }
   public void setExecutorProgress(float executorProgress) {
     float adjustProgress = executorProgress * (1 - fetcherProgress);
+    progressChanged.set(false);
     setProgress(fetcherProgress + adjustProgress);
   }
 

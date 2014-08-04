@@ -217,7 +217,7 @@
       <td><%=rowNo%></td>
       <td><a href="<%=queryUnitDetailUrl%>"><%=eachQueryUnit.getId()%></a></td>
       <td><%=eachQueryUnit.getState()%></td>
-      <td><%=JSPUtil.percentFormat(eachQueryUnit.getLastAttempt().getProgress() * 100.0f)%>%</td>
+      <td><%=JSPUtil.percentFormat(eachQueryUnit.getLastAttempt().getProgress())%>%</td>
       <td><%=eachQueryUnit.getLaunchTime() == 0 ? "-" : df.format(eachQueryUnit.getLaunchTime())%></td>
       <td align='right'><%=eachQueryUnit.getLaunchTime() == 0 ? "-" : eachQueryUnit.getRunningTime() + " ms"%></td>
       <td><%=queryUnitHost%></td>
