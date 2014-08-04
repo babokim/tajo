@@ -308,21 +308,26 @@ public class TaskAttemptContext {
     float previousProgress = this.progress;
     this.progress = progress;
     if (previousProgress != progress) {
-      progressChanged.set(true);
+      setProgressChanged(true);
     }
   }
 
   public boolean isProgressChanged() {
     return progressChanged.get();
   }
+
+  public void setProgressChanged(boolean changed){
+    progressChanged.set(changed);
+  }
+
   public void setExecutorProgress(float executorProgress) {
     float adjustProgress = executorProgress * (1 - fetcherProgress);
-    progressChanged.set(false);
     setProgress(fetcherProgress + adjustProgress);
   }
 
   public void setFetcherProgress(float fetcherProgress) {
     this.fetcherProgress = fetcherProgress;
+    setProgress(fetcherProgress);
   }
 
   public FragmentProto getTable(String id) {

@@ -418,6 +418,7 @@ public class Task {
         waitForFetch();
         context.setFetcherProgress(FETCHER_PROGRESS);
         context.setProgress(FETCHER_PROGRESS);
+        updateProgress();
       }
 
       this.executor = taskRunnerContext.getTQueryEngine().

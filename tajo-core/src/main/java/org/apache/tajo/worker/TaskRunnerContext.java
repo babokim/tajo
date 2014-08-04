@@ -376,6 +376,7 @@ public class TaskRunnerContext {
                   if(task.isProgressChanged()){
                     task.updateProgress();
                     masterStub.statusUpdate(null, task.getReport(), NullCallback.get());
+                    task.getContext().setProgressChanged(false);
                   } else {
                     task.updateProgress();
                   }
