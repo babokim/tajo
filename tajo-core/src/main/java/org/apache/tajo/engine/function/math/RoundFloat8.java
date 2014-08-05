@@ -23,15 +23,14 @@ import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.DatumFactory;
 import org.apache.tajo.datum.NullDatum;
-import org.apache.tajo.engine.eval.FunctionEval;
 import org.apache.tajo.engine.function.GeneralFunction;
 import org.apache.tajo.engine.function.annotation.Description;
 import org.apache.tajo.engine.function.annotation.ParamTypes;
+import org.apache.tajo.exception.InvalidOperationException;
 import org.apache.tajo.storage.Tuple;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.text.NumberFormat;
 
 /**
  * Function definition
@@ -65,8 +64,22 @@ public class RoundFloat8 extends GeneralFunction {
     }
 
     double value = valueDatum.asFloat8();
-    int roundPnt = roundDatum.asInt4();
+    int rountPoint = roundDatum.asInt4();
 
-    return DatumFactory.createFloat8(BigDecimal.valueOf(value).setScale(roundPnt, RoundingMode.HALF_UP).doubleValue());
+    if (Double.isNaN(value)) {
+      throw new InvalidOperationException("value is not a number.");
+    }
+
+    if (Double.isInfinite(value)) {
+      throw new InvalidOperationException("value is infinite.");
+    }
+
+    try {
+      return DatumFactory.createFloat8(BigDecimal.valueOf(value).setScale(rountPoint,
+          RoundingMode.HALF_UP).doubleValue());
+    } catch (Exception e) {
+      throw new InvalidOperationException("RoundFloat8 eval error cause " + e.getMessage() + ", value=" + value +
+          ", round point=" + rountPoint);
+    }
   }
 }

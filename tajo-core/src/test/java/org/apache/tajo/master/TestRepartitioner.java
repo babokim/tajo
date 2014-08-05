@@ -23,16 +23,13 @@ import org.apache.tajo.ExecutionBlockId;
 import org.apache.tajo.QueryId;
 import org.apache.tajo.TestTajoIds;
 import org.apache.tajo.ipc.TajoWorkerProtocol;
-import org.apache.tajo.master.querymaster.QueryMaster;
 import org.apache.tajo.master.querymaster.QueryUnit;
 import org.apache.tajo.master.querymaster.Repartitioner;
-import org.apache.tajo.master.querymaster.SubQuery;
 import org.apache.tajo.util.Pair;
 import org.apache.tajo.util.TUtil;
 import org.apache.tajo.worker.FetchImpl;
 import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.junit.Test;
-import org.mockito.Mockito;
 
 import java.net.URI;
 import java.util.ArrayList;

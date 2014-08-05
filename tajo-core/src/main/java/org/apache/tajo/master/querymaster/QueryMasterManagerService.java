@@ -204,6 +204,7 @@ public class QueryMasterManagerService extends CompositeService
     try {
       QueryMasterTask queryMasterTask = queryMaster.getQueryMasterTask(
           new QueryId(report.getId().getQueryUnitId().getExecutionBlockId().getQueryId()));
+      // queryMaster terminated by internal error before task has not done
       if (queryMasterTask != null) {
         queryMasterTask.getEventHandler().handle(new TaskCompletionEvent(report));
       }

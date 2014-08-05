@@ -58,6 +58,7 @@ import org.apache.tajo.worker.FetchImpl;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.math.BigInteger;
+import java.net.URI;
 import java.util.*;
 import java.util.Map.Entry;
 
@@ -696,6 +697,7 @@ public class Repartitioner {
     public long getVolume() {
       return totalVolume;
     }
+
   }
 
   public static void scheduleHashShuffledFetches(TaskSchedulerContext schedulerContext, MasterPlan masterPlan,
