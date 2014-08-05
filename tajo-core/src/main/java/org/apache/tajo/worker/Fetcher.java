@@ -120,9 +120,9 @@ public class Fetcher {
   public File get() throws IOException {
     this.startTime = System.currentTimeMillis();
     this.state = TajoProtos.FetcherState.FETCH_FETCHING;
-
+    ChannelFuture future = null;
     try {
-      ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+      future = bootstrap.connect(new InetSocketAddress(host, port));
 
       // Wait until the connection attempt succeeds or fails.
       Channel channel = future.awaitUninterruptibly().getChannel();
@@ -149,10 +149,13 @@ public class Fetcher {
 
       channelFuture.addListener(ChannelFutureListener.CLOSE);
 
-      // Close the channel to exit.
-      future.getChannel().close();
       return file;
     } finally {
+      if(future != null){
+        // Close the channel to exit.
+        future.getChannel().close();
+      }
+
       this.finishTime = System.currentTimeMillis();
       LOG.info("Status: " + getState() + ", URI:" + uri);
       if (timer != null) {
@@ -253,7 +256,6 @@ public class Fetcher {
         }
 
         if(fileLen == length){
-          IOUtils.cleanup(LOG, fc, raf);
           finishTime = System.currentTimeMillis();
           state = TajoProtos.FetcherState.FETCH_FINISHED;
         }
@@ -271,7 +273,9 @@ public class Fetcher {
 
       // this fetching will be retry
       IOUtils.cleanup(LOG, fc, raf);
-      ctx.getChannel().close();
+      if(ctx.getChannel().isConnected()){
+        ctx.getChannel().close();
+      }
       finishTime = System.currentTimeMillis();
       state = TajoProtos.FetcherState.FETCH_FAILED;
     }
@@ -285,6 +289,7 @@ public class Fetcher {
         finishTime = System.currentTimeMillis();
         state = TajoProtos.FetcherState.FETCH_FAILED;
       }
+      IOUtils.cleanup(LOG, fc, raf);
     }
   }
 

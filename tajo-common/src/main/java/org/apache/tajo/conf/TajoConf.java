@@ -218,8 +218,8 @@ public class TajoConf extends Configuration {
     SHUFFLE_FILE_FORMAT("tajo.shuffle.file-format", "RAW"),
     SHUFFLE_FETCHER_PARALLEL_EXECUTION_MAX_NUM("tajo.shuffle.fetcher.parallel-execution.max-num", 2),
     SHUFFLE_FETCHER_CHUNK_MAX_SIZE("tajo.shuffle.fetcher.chunk.max-size",  8192),
-    SHUFFLE_FETCHER_READ_TIMEOUT("tajo.shuffle.fetcher.read.timeout-sec", 60),
-    SHUFFLE_FETCHER_READ_RETRY_MAX_NUM("tajo.shuffle.fetcher.read.retry.max-num", 5),
+    SHUFFLE_FETCHER_READ_TIMEOUT("tajo.shuffle.fetcher.read.timeout-sec", 120),
+    SHUFFLE_FETCHER_READ_RETRY_MAX_NUM("tajo.shuffle.fetcher.read.retry.max-num", 20),
 
     //////////////////////////////////
     // Storage Configuration
@@ -348,6 +348,9 @@ public class TajoConf extends Configuration {
 
     // ONLY FOR TESTCASE
     TESTCASE_MIN_TASK_NUM("tajo.testcase.min.task.num", -1),
+
+    // behavior control
+    BEHAVIOR_ARITHMETIC_ABORT("tajo.behavior.arithmetic-abort", false),
 
     COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi"),
     //JOB_SCHEDULER

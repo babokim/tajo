@@ -374,7 +374,9 @@ public class QueryMaster extends CompositeService implements EventHandler {
           queryMasterTask.stop();
           //if (!systemConf.get(CommonTestingUtil.TAJO_TEST, "FALSE").equalsIgnoreCase("TRUE")
          //     && !workerContext.isYarnContainerMode()) {
-            cleanup(queryId);       // TODO We will support yarn mode
+          if (!getContext().getConf().getBoolVar(TajoConf.ConfVars.TAJO_DEBUG)) {
+            cleanup(queryId);
+          }
           //}
         } catch (Exception e) {
           LOG.error(e.getMessage(), e);

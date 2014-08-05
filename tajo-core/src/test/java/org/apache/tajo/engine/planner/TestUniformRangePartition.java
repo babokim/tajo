@@ -27,7 +27,6 @@ import org.apache.tajo.storage.TupleRange;
 import org.apache.tajo.storage.VTuple;
 import org.junit.Test;
 
-import java.math.BigDecimal;
 import java.math.BigInteger;
 
 import static org.junit.Assert.assertEquals;

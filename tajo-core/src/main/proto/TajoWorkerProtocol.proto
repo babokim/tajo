@@ -184,6 +184,10 @@ message ExecutionBlockListProto {
     repeated ExecutionBlockIdProto executionBlockId = 1;
 }
 
+message ExecutionBlockListProto {
+    repeated ExecutionBlockIdProto executionBlockId = 1;
+}
+
 service TajoWorkerProtocolService {
   rpc ping (QueryUnitAttemptIdProto) returns (BoolProto);
 
