@@ -417,7 +417,7 @@ public class Task {
         // complete.
         waitForFetch();
         context.setFetcherProgress(FETCHER_PROGRESS);
-        context.setProgress(FETCHER_PROGRESS);
+        context.setProgressChanged(true);
         updateProgress();
       }
 
@@ -439,7 +439,6 @@ public class Task {
       QueryMasterProtocol.QueryMasterProtocolService.Interface queryMasterStub =  taskRunnerContext.getQueryMasterStub();
       if (killed || aborted) {
         context.setExecutorProgress(0.0f);
-        context.setProgress(0.0f);
         if(killed) {
           context.setState(TaskAttemptState.TA_KILLED);
           queryMasterStub.statusUpdate(null, getReport(), NullCallback.get());
@@ -631,7 +630,7 @@ public class Task {
 
   @VisibleForTesting
   public static float adjustFetchProcess(int totalFetcher, int remainFetcher) {
-    return ((float)(totalFetcher - remainFetcher)) / (float)totalFetcher * FETCHER_PROGRESS;
+    return ((totalFetcher - remainFetcher) / (float) totalFetcher) * FETCHER_PROGRESS;
   }
 
   private synchronized void fetcherFinished(TaskAttemptContext ctx) {
@@ -647,6 +646,7 @@ public class Task {
       context.setFetcherProgress(FETCHER_PROGRESS);
     } else {
       context.setFetcherProgress(adjustFetchProcess(fetcherSize, remainFetcher));
+      context.setProgressChanged(true);
     }
   }
 

@@ -151,6 +151,7 @@ public class TaskRunnerContext {
     this.queryEngine = new TajoQueryEngine(systemConf);
 
     this.reporter = new Reporter();
+    this.reporter.startReporter();
   }
 
   public QueryMasterProtocol.QueryMasterProtocolService.Interface getQueryMasterStub() throws Exception {
@@ -355,6 +356,10 @@ public class TaskRunnerContext {
     public Reporter() {
       this.reporterThread = new Thread(createReporterThread());
       this.reporterThread.setName("Task reporter");
+    }
+
+    public void startReporter(){
+      this.reporterThread.start();
     }
 
     Runnable createReporterThread() {

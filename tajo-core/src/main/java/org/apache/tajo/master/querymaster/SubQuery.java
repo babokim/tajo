@@ -343,7 +343,6 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         totalProgress += eachQueryUnit.getLastAttempt().getProgress();
       }
     }
-
     return (float) Math.floor((totalProgress / (float) tempTasks.size()) * 1000.0f) / 1000.0f;
   }
 

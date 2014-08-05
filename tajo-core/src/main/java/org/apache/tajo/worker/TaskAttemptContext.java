@@ -321,13 +321,15 @@ public class TaskAttemptContext {
   }
 
   public void setExecutorProgress(float executorProgress) {
-    float adjustProgress = executorProgress * (1 - fetcherProgress);
-    setProgress(fetcherProgress + adjustProgress);
+    if (hasFetchPhase()) {
+      setProgress(fetcherProgress + (executorProgress * 0.5f));
+    } else {
+      setProgress(executorProgress);
+    }
   }
 
   public void setFetcherProgress(float fetcherProgress) {
     this.fetcherProgress = fetcherProgress;
-    setProgress(fetcherProgress);
   }
 
   public FragmentProto getTable(String id) {
