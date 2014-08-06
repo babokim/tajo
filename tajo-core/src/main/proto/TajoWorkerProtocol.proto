@@ -88,6 +88,8 @@ message FetchProto {
     //repeated part
     repeated int32 taskId = 9 [packed=true];
     repeated int32 attemptId = 10 [packed=true];
+
+    optional int32 endPartitionId = 11;
 }
 
 
