@@ -28,12 +28,8 @@ import org.apache.tajo.master.querymaster.Repartitioner;
 import org.apache.tajo.util.Pair;
 import org.apache.tajo.util.TUtil;
 import org.apache.tajo.worker.FetchImpl;
-import org.jboss.netty.handler.codec.http.QueryStringDecoder;
 import org.junit.Test;
 
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -63,31 +59,18 @@ public class TestRepartitioner {
     TajoWorkerProtocol.FetchProto proto = fetch.getProto();
     fetch = new FetchImpl(proto);
     assertEquals(proto, fetch.getProto());
-    List<URI> uris = fetch.getURIs();
-
-    List<String> taList = TUtil.newList();
-    for (URI uri : uris) {
-      final Map<String, List<String>> params =
-          new QueryStringDecoder(uri).getParameters();
-      taList.addAll(splitMaps(params.get("ta")));
-    }
-
-    int checkTaskId = 0;
-    for (String ta : taList) {
-      assertEquals(checkTaskId++, Integer.parseInt(ta.split("_")[0]));
-    }
   }
 
-  private List<String> splitMaps(List<String> mapq) {
-    if (null == mapq) {
-      return null;
-    }
-    final List<String> ret = new ArrayList<String>();
-    for (String s : mapq) {
-      Collections.addAll(ret, s.split(","));
-    }
-    return ret;
-  }
+//  private List<String> splitMaps(List<String> mapq) {
+//    if (null == mapq) {
+//      return null;
+//    }
+//    final List<String> ret = new ArrayList<String>();
+//    for (String s : mapq) {
+//      Collections.addAll(ret, s.split(","));
+//    }
+//    return ret;
+//  }
 
   @Test
   public void testScheduleFetchesByEvenDistributedVolumes() {

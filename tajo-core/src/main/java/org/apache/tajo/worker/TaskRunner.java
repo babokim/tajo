@@ -47,6 +47,7 @@ import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.rpc.RpcConnectionPool;
 import org.apache.tajo.storage.StorageUtil;
 import org.apache.tajo.util.TajoIdUtils;
+import org.apache.tajo.worker.TajoWorker.WorkerContext;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -324,6 +325,10 @@ public class TaskRunner extends AbstractService {
     public TaskRunnerHistory getExcutionBlockHistory(){
       return history;
     }
+
+    public WorkerContext getWorkerContext() {
+      return taskRunnerManager.getWorkerContext();
+    }
   }
 
   public TaskRunnerContext getContext() {
@@ -383,7 +388,9 @@ public class TaskRunner extends AbstractService {
                 }
                 // if there has been no assigning task for a given period,
                 // TaskRunner will retry to request an assigning task.
-                LOG.info("Retry assigning task:" + getId());
+                if (LOG.isDebugEnabled()) {
+                  LOG.info("Retry assigning task:" + getId());
+                }
                 continue;
               }
 

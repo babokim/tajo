@@ -250,7 +250,6 @@ public class TajoConf extends Configuration {
     DIST_QUERY_GROUPBY_PARTITION_VOLUME("tajo.dist-query.groupby.partition-volume-mb", 256),
 
     DIST_QUERY_TABLE_PARTITION_VOLUME("tajo.dist-query.table-partition.task-volume-mb", 256),
-
     DIST_QUERY_CLUSTER_SLOT_MAX_RATIO("tajo.dist-query.cluster-slot.max-ratio", 1.0f),
 
     //////////////////////////////////
@@ -352,7 +351,9 @@ public class TajoConf extends Configuration {
     // behavior control
     BEHAVIOR_ARITHMETIC_ABORT("tajo.behavior.arithmetic-abort", false),
 
-    COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi"),
+    HASH_SHUFFLE_PARENT_DIRS("tajo.hash.shuffle.parent.dirs.count", 10),
+
+    COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi")
     ;
 
     public final String varname;
