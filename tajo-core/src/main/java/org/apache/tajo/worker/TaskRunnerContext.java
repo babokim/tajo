@@ -74,6 +74,7 @@ public class TaskRunnerContext {
   private ExecutionBlockId executionBlockId;
 
   private TajoQueryEngine queryEngine;
+  private LocalDirAllocator lDirAllocator;
   private RpcConnectionPool connPool;
   private InetSocketAddress qmMasterAddr;
   private WorkerConnectionInfo queryMaster;
@@ -134,10 +135,13 @@ public class TaskRunnerContext {
     this.defaultFS = TajoConf.getTajoRootDir(systemConf).getFileSystem(systemConf);
     this.localFS = FileSystem.getLocal(systemConf);
 
+    // initialize LocalDirAllocator
+    lDirAllocator = new LocalDirAllocator(TajoConf.ConfVars.WORKER_TEMPORAL_DIR.varname);
+
     ThreadFactoryBuilder builder = new ThreadFactoryBuilder();
     ThreadFactory fetcherFactory = builder.setNameFormat("Fetcher executor #%d").build();
 
-    Iterable<Path> iter = getLocalDirAllocator().getAllLocalPathsToRead(".", systemConf);
+    Iterable<Path> iter = lDirAllocator.getAllLocalPathsToRead(".", systemConf);
     for (Path localDir : iter){
       if(!fetcherExecutorMap.containsKey(localDir)){
         ThreadPoolExecutor fetcherExecutor = (ThreadPoolExecutor)Executors.newFixedThreadPool(
@@ -214,7 +218,7 @@ public class TaskRunnerContext {
   }
 
   public LocalDirAllocator getLocalDirAllocator() {
-    return manager.getLocalDirAllocator();
+    return lDirAllocator;
   }
 
   public TajoQueryEngine getTQueryEngine() {
@@ -261,16 +265,13 @@ public class TaskRunnerContext {
     return fetcherExecutor;
   }
 
-  public static String getBasePath(ExecutionBlockId executionBlockId){
-    return getBaseOutputDir(executionBlockId).toString();
-  }
-
   // for the local temporal dir
-  public String getLocalWorkPath() throws IOException {
+  public Path getBaseDir() throws IOException {
     // the base dir for an output dir
-    String basePath = getBasePath(executionBlockId);
-    LOG.info("TaskRunnerContext basedir is created (" + basePath +")");
-    return basePath;
+    String baseDir = executionBlockId.getQueryId().toString() + "/output" + "/" + executionBlockId.getId();
+    Path baseDirPath = localFS.makeQualified(lDirAllocator.getLocalPathForWrite(baseDir, systemConf));
+    LOG.info("TaskRunnerContext basedir is created (" + baseDir +")");
+    return baseDirPath;
   }
 
   public static Path getBaseOutputDir(ExecutionBlockId executionBlockId) {

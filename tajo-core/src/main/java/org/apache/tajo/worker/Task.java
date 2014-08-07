@@ -73,7 +73,7 @@ public class Task {
   private final QueryUnitAttemptId taskId;
   private final TaskRunnerId taskRunnerId;
 
-  private final Path taskPath;
+  private final Path taskDir;
   private final QueryUnitRequest request;
   private TaskAttemptContext context;
   private List<Fetcher> fetcherRunners;
@@ -138,12 +138,11 @@ public class Task {
 
     this.queryContext = request.getQueryContext();
     this.taskRunnerContext = worker;
-    this.taskPath = StorageUtil.concatPath(taskRunnerContext.getLocalWorkPath(),
+    this.taskDir = StorageUtil.concatPath(taskRunnerContext.getBaseDir(),
         taskId.getQueryUnitId().getId() + "_" + taskId.getId());
 
     this.context = new TaskAttemptContext(taskRunnerContext.getConf(), queryContext, taskId,
-        request.getFragments().toArray(new FragmentProto[request.getFragments().size()]),
-        taskRunnerContext.getLocalDirAllocator(), taskPath);
+        request.getFragments().toArray(new FragmentProto[request.getFragments().size()]), taskDir);
     this.context.setDataChannel(request.getDataChannel());
     this.context.setEnforcer(request.getEnforcer());
     this.inputStats = new TableStats();
@@ -198,7 +197,7 @@ public class Task {
     for (FetchImpl f : request.getFetches()) {
       LOG.info("Table Id: " + f.getName() + ", Simple URIs: " + f.getSimpleURIs());
     }
-    LOG.info("* Local task dir: " + taskPath);
+    LOG.info("* Local task dir: " + taskDir);
     if(LOG.isDebugEnabled()) {
       LOG.debug("* plan:\n");
       LOG.debug(plan.toString());
@@ -208,8 +207,10 @@ public class Task {
 
   public void init() throws IOException {
     // initialize a task temporal dir
+    FileSystem localFS = taskRunnerContext.getLocalFS();
+    localFS.mkdirs(taskDir);
+
     if (request.getFetches().size() > 0) {
-      FileSystem localFS = taskRunnerContext.getLocalFS();
       inputTableBaseDir = localFS.makeQualified(
           taskRunnerContext.getLocalDirAllocator().getLocalPathForWrite(
               getTaskAttemptDir(context.getTaskId()).toString(), taskRunnerContext.getConf())
@@ -506,8 +507,8 @@ public class Task {
         taskHistory.setOutputPath(context.getOutputPath().toString());
       }
 
-      if (context.getWorkPath() != null) {
-        taskHistory.setWorkingPath(context.getWorkPath().toString());
+      if (context.getWorkDir() != null) {
+        taskHistory.setWorkingPath(context.getWorkDir().toString());
       }
 
       if (context.getResultStats() != null) {
