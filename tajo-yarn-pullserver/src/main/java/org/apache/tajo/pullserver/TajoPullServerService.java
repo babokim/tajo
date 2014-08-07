@@ -31,6 +31,7 @@ import org.apache.hadoop.io.DataInputByteBuffer;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.ReadaheadPool;
 import org.apache.hadoop.mapred.FadvisedChunkedFile;
+import org.apache.hadoop.mapred.FadvisedFileRegion;
 import org.apache.hadoop.metrics2.MetricsSystem;
 import org.apache.hadoop.metrics2.annotation.Metric;
 import org.apache.hadoop.metrics2.annotation.Metrics;
@@ -57,15 +58,13 @@ import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.group.ChannelGroup;
 import org.jboss.netty.channel.group.DefaultChannelGroup;
+import org.jboss.netty.handler.codec.frame.TooLongFrameException;
 import org.jboss.netty.handler.codec.http.*;
 import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.handler.stream.ChunkedWriteHandler;
 import org.jboss.netty.util.CharsetUtil;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -75,6 +74,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.jboss.netty.handler.codec.http.HttpHeaders.Names.CONTENT_TYPE;
 import static org.jboss.netty.handler.codec.http.HttpHeaders.isKeepAlive;
@@ -240,6 +240,72 @@ public class TajoPullServerService extends AbstractService {
 
     sslFileBufferSize = conf.getInt(SUFFLE_SSL_FILE_BUFFER_SIZE_KEY,
                                     DEFAULT_SUFFLE_SSL_FILE_BUFFER_SIZE);
+
+    if ("dedicated".equalsIgnoreCase(getPullServerMode())) {
+      File pullServerPortFile = getPullServerPortFile();
+      if (pullServerPortFile.exists()) {
+        pullServerPortFile.delete();
+      }
+      pullServerPortFile.getParentFile().mkdirs();
+      LOG.info("Write PullServerPort to " + pullServerPortFile);
+      try {
+        FileOutputStream out = new FileOutputStream(pullServerPortFile);
+        out.write(("" + port).getBytes());
+        out.close();
+      } catch (Exception e) {
+        LOG.fatal("PullServer exists cause can't write PullServer port to " + pullServerPortFile +
+            ", " + e.getMessage(), e);
+        System.exit(-1);
+      }
+    }
+    LOG.info("TajoPullServerService started: port=" + port);
+  }
+
+  private static File getPullServerPortFile() {
+    String pullServerPortInfoFile = System.getenv("TAJO_PID_DIR");
+    if (pullServerPortInfoFile == null || pullServerPortInfoFile.isEmpty()) {
+      pullServerPortInfoFile = "/tmp";
+    }
+
+    return new File(pullServerPortInfoFile + "/pullserver.port");
+  }
+
+  public static String getPullServerMode() {
+    String mode = System.getenv("TAJO_PULLSERVER_MODE");
+    if (mode == null || mode.trim().isEmpty()) {
+      mode = System.getProperty("TAJO_PULLSERVER_MODE");
+    }
+
+    if (mode == null || mode.trim().isEmpty()) {
+      return "dedicated"; //default mode
+    } else {
+      return mode.trim();
+    }
+  }
+
+  public static int readPullServerPort() {
+    FileInputStream in = null;
+    try {
+      File pullServerPortFile = getPullServerPortFile();
+
+      if (!pullServerPortFile.exists() || pullServerPortFile.isDirectory()) {
+        return -1;
+      }
+      in = new FileInputStream(pullServerPortFile);
+      byte[] buf = new byte[1024];
+      int readBytes = in.read(buf);
+      return Integer.parseInt(new String(buf, 0, readBytes));
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
+      return -1;
+    } finally {
+      if (in != null) {
+        try {
+          in.close();
+        } catch (IOException e) {
+        }
+      }
+    }
   }
 
   public int getPort() {
@@ -312,6 +378,63 @@ public class TajoPullServerService extends AbstractService {
     }
   }
 
+
+  Map<String, ProcessingStatus> processingStatusMap = new ConcurrentHashMap<String, ProcessingStatus>();
+
+  public void completeFileChunk(FadvisedFileRegion filePart,
+                                   String requestUri,
+                                   long startTime) {
+    ProcessingStatus status = processingStatusMap.get(requestUri);
+    if (status != null) {
+      status.decrementRemainFiles(filePart, startTime);
+    }
+  }
+
+  class ProcessingStatus {
+    String requestUri;
+    int numFiles;
+    AtomicInteger remainFiles;
+    long startTime;
+    long makeFileListTime;
+    long minTime = Long.MAX_VALUE;
+    long maxTime;
+    int numSlowFile;
+
+    public ProcessingStatus(String requestUri) {
+      this.requestUri = requestUri;
+      this.startTime = System.currentTimeMillis();
+    }
+
+    public void setNumFiles(int numFiles) {
+      this.numFiles = numFiles;
+      this.remainFiles = new AtomicInteger(numFiles);
+    }
+    public void decrementRemainFiles(FadvisedFileRegion filePart, long fileStartTime) {
+      synchronized(remainFiles) {
+        long fileSendTime = System.currentTimeMillis() - fileStartTime;
+        if (fileSendTime > 20 * 1000) {
+          LOG.info("PullServer send too long time: filePos=" + filePart.getPosition() + ", fileLen=" + filePart.getCount());
+          numSlowFile++;
+        }
+        if (fileSendTime > maxTime) {
+          maxTime = fileSendTime;
+        }
+        if (fileSendTime < minTime) {
+          minTime = fileSendTime;
+        }
+        int remain = remainFiles.decrementAndGet();
+        if (remain <= 0) {
+          synchronized(processingStatusMap) {
+            processingStatusMap.remove(requestUri);
+          }
+          LOG.info("PullServer processing status: totalTime=" + (System.currentTimeMillis() - startTime) + " ms, " +
+              "makeFileListTime=" + makeFileListTime + " ms, minTime=" + minTime + " ms, maxTime=" + maxTime + " ms, " +
+              "numFiles=" + numFiles + ", numSlowFile=" + numSlowFile);
+        }
+      }
+    }
+  }
+
   class PullServer extends SimpleChannelUpstreamHandler {
 
     private final Configuration conf;
@@ -365,6 +488,10 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
+      ProcessingStatus processingStatus = new ProcessingStatus(request.getUri().toString());
+      synchronized(processingStatusMap) {
+        processingStatusMap.put(request.getUri().toString(), processingStatus);
+      }
       // Parsing the URL into key-values
       final Map<String, List<String>> params =
           new QueryStringDecoder(request.getUri()).getParameters();
@@ -395,13 +522,15 @@ public class TajoPullServerService extends AbstractService {
       String partId = partIds.get(0);
       List<String> taskIds = splitMaps(taskIdList);
 
-      LOG.info("PullServer request param: shuffleType=" + shuffleType +
-          ", sid=" + sid + ", partId=" + partId + ", taskIds=" + taskIdList);
-
-      // the working dir of tajo worker for each query
       String queryBaseDir = queryId.toString() + "/output";
 
-      LOG.info("PullServer baseDir: " + conf.get(ConfVars.WORKER_TEMPORAL_DIR.varname) + "/" + queryBaseDir);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("PullServer request param: shuffleType=" + shuffleType +
+            ", sid=" + sid + ", partId=" + partId + ", taskIds=" + taskIdList);
+
+        // the working dir of tajo worker for each query
+        LOG.debug("PullServer baseDir: " + conf.get(ConfVars.WORKER_TEMPORAL_DIR.varname) + "/" + queryBaseDir);
+      }
 
       // if a subquery requires a range shuffle
       if (shuffleType.equals("r")) {
@@ -475,6 +604,8 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
+      processingStatus.setNumFiles(chunks.size());
+      processingStatus.makeFileListTime = System.currentTimeMillis() - processingStatus.startTime;
       // Write the content.
       Channel ch = e.getChannel();
       if (chunks.size() == 0) {
@@ -498,7 +629,7 @@ public class TajoPullServerService extends AbstractService {
         ChannelFuture writeFuture = null;
 
         for (FileChunk chunk : file) {
-          writeFuture = sendFile(ctx, ch, chunk);
+          writeFuture = sendFile(ctx, ch, chunk, request.getUri().toString());
           if (writeFuture == null) {
             sendError(ctx, NOT_FOUND);
             return;
@@ -515,17 +646,20 @@ public class TajoPullServerService extends AbstractService {
 
     private ChannelFuture sendFile(ChannelHandlerContext ctx,
                                    Channel ch,
-                                   FileChunk file) throws IOException {
+                                   FileChunk file,
+                                   String requestUri) throws IOException {
+      long startTime = System.currentTimeMillis();
       RandomAccessFile spill = null;
       ChannelFuture writeFuture;
       try {
         spill = new RandomAccessFile(file.getFile(), "r");
+
         if (ch.getPipeline().get(SslHandler.class) == null) {
           final FadvisedFileRegionWrapper filePart = new FadvisedFileRegionWrapper(spill,
               file.startOffset, file.length(), manageOsCache, readaheadLength,
               readaheadPool, file.getFile().getAbsolutePath());
           writeFuture = ch.write(filePart);
-          writeFuture.addListener(new FileCloseListener(filePart));
+          writeFuture.addListener(new FileCloseListener(filePart, requestUri, startTime, TajoPullServerService.this));
         } else {
           // HTTPS cannot be done with zero copy.
           final FadvisedChunkedFile chunk = new FadvisedChunkedFile(spill,
