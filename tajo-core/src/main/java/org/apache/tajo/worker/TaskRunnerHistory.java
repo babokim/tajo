@@ -82,7 +82,12 @@ public class TaskRunnerHistory implements ProtoObject<TaskRunnerHistoryProto> {
   public boolean equals(Object o) {
     if (o instanceof TaskRunnerHistory) {
       TaskRunnerHistory other = (TaskRunnerHistory) o;
-      return getProto().equals(other.getProto());
+      boolean result = getProto().equals(other.getProto());
+      if (!result) {
+        System.out.println("Origin TaskRunnerHistory:" + getProto().toString());
+        System.out.println("Target TaskRunnerHistory:" + other.getProto().toString());
+      }
+      return result;
     }
     return false;
   }
