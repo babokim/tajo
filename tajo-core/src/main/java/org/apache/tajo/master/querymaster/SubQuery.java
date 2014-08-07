@@ -733,9 +733,8 @@ public class SubQuery implements EventHandler<SubQueryEvent> {
         LOG.info(subQuery.getId() + ", Total memory of cluster is " + totalMem + " MB");
         int slots = Math.max(totalMem / conf.getIntVar(ConfVars.TASK_DEFAULT_MEMORY), 1);
 
-        int maxSlots = (int)(slots * conf.getFloatVar(ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO));
-        QueryContext.getFloatVar(subQuery.getContext().getQueryContext(), conf,
-            ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO);
+        int maxSlots = (int)(slots * QueryContext.getFloatVar(subQuery.getContext().getQueryContext(), conf,
+            ConfVars.DIST_QUERY_CLUSTER_SLOT_MAX_RATIO));
 
         // determine the number of task
         taskNum = Math.min(taskNum, maxSlots);
