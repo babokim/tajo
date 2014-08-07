@@ -31,6 +31,7 @@ import org.apache.hadoop.io.DataInputByteBuffer;
 import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.ReadaheadPool;
 import org.apache.hadoop.mapred.FadvisedChunkedFile;
+import org.apache.hadoop.mapred.FadvisedFileRegion;
 import org.apache.hadoop.metrics2.MetricsSystem;
 import org.apache.hadoop.metrics2.annotation.Metric;
 import org.apache.hadoop.metrics2.annotation.Metrics;
@@ -47,6 +48,7 @@ import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.pullserver.listener.FileCloseListener;
 import org.apache.tajo.pullserver.retriever.FileChunk;
 import org.apache.tajo.rpc.RpcChannelFactory;
+import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.storage.RowStoreUtil;
 import org.apache.tajo.storage.RowStoreUtil.RowStoreDecoder;
 import org.apache.tajo.storage.Tuple;
@@ -62,10 +64,7 @@ import org.jboss.netty.handler.ssl.SslHandler;
 import org.jboss.netty.handler.stream.ChunkedWriteHandler;
 import org.jboss.netty.util.CharsetUtil;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -75,6 +74,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.jboss.netty.handler.codec.http.HttpHeaders.Names.CONTENT_TYPE;
 import static org.jboss.netty.handler.codec.http.HttpHeaders.isKeepAlive;
@@ -207,10 +207,13 @@ public class TajoPullServerService extends AbstractService {
       selector = RpcChannelFactory.createServerChannelFactory("PullServerAuxService", workerNum);
 
       localFS = new LocalFileSystem();
-      super.init(new Configuration(conf));
+      //super.init(new Configuration(conf));
+      super.init(conf);
 
       this.getConfig().setInt(TajoConf.ConfVars.PULLSERVER_PORT.varname
           , TajoConf.ConfVars.PULLSERVER_PORT.defaultIntVal);
+
+      LOG.info("Tajo PullServer initialized: readaheadLength=" + readaheadLength);
     } catch (Throwable t) {
       LOG.fatal(t.getMessage(), t);
     }
@@ -237,6 +240,24 @@ public class TajoPullServerService extends AbstractService {
     sslFileBufferSize = conf.getInt(SUFFLE_SSL_FILE_BUFFER_SIZE_KEY,
                                     DEFAULT_SUFFLE_SSL_FILE_BUFFER_SIZE);
 
+    if ("dedicated".equalsIgnoreCase(getPullServerMode())) {
+      File pullServerPortFile = getPullServerPortFile();
+      if (pullServerPortFile.exists()) {
+        pullServerPortFile.delete();
+      }
+      pullServerPortFile.getParentFile().mkdirs();
+      LOG.info("Write PullServerPort to " + pullServerPortFile);
+      try {
+        FileOutputStream out = new FileOutputStream(pullServerPortFile);
+        out.write(("" + port).getBytes());
+        out.close();
+      } catch (Exception e) {
+        LOG.fatal("PullServer exists cause can't write PullServer port to " + pullServerPortFile +
+            ", " + e.getMessage(), e);
+        System.exit(-1);
+      }
+    }
+    LOG.info("TajoPullServerService started: port=" + port);
     super.serviceInit(conf);
   }
 
@@ -244,6 +265,53 @@ public class TajoPullServerService extends AbstractService {
   public synchronized void serviceStart() throws Exception {
     pipelineFact.PullServer.setPort(port);
     super.serviceStart();
+  }
+
+  private static File getPullServerPortFile() {
+    String pullServerPortInfoFile = System.getenv("TAJO_PID_DIR");
+    if (pullServerPortInfoFile == null || pullServerPortInfoFile.isEmpty()) {
+      pullServerPortInfoFile = "/tmp";
+    }
+
+    return new File(pullServerPortInfoFile + "/pullserver.port");
+  }
+
+  public static String getPullServerMode() {
+    String mode = System.getenv("TAJO_PULLSERVER_MODE");
+    if (mode == null || mode.trim().isEmpty()) {
+      mode = System.getProperty("TAJO_PULLSERVER_MODE");
+    }
+
+    if (mode == null || mode.trim().isEmpty()) {
+      return "dedicated"; //default mode
+    } else {
+      return mode.trim();
+    }
+  }
+
+  public static int readPullServerPort() {
+    FileInputStream in = null;
+    try {
+      File pullServerPortFile = getPullServerPortFile();
+
+      if (!pullServerPortFile.exists() || pullServerPortFile.isDirectory()) {
+        return -1;
+      }
+      in = new FileInputStream(pullServerPortFile);
+      byte[] buf = new byte[1024];
+      int readBytes = in.read(buf);
+      return Integer.parseInt(new String(buf, 0, readBytes));
+    } catch (Exception e) {
+      LOG.error(e.getMessage(), e);
+      return -1;
+    } finally {
+      if (in != null) {
+        try {
+          in.close();
+        } catch (IOException e) {
+        }
+      }
+    }
   }
 
   public int getPort() {
@@ -316,6 +384,63 @@ public class TajoPullServerService extends AbstractService {
     }
   }
 
+
+  Map<String, ProcessingStatus> processingStatusMap = new ConcurrentHashMap<String, ProcessingStatus>();
+
+  public void completeFileChunk(FadvisedFileRegion filePart,
+                                   String requestUri,
+                                   long startTime) {
+    ProcessingStatus status = processingStatusMap.get(requestUri);
+    if (status != null) {
+      status.decrementRemainFiles(filePart, startTime);
+    }
+  }
+
+  class ProcessingStatus {
+    String requestUri;
+    int numFiles;
+    AtomicInteger remainFiles;
+    long startTime;
+    long makeFileListTime;
+    long minTime = Long.MAX_VALUE;
+    long maxTime;
+    int numSlowFile;
+
+    public ProcessingStatus(String requestUri) {
+      this.requestUri = requestUri;
+      this.startTime = System.currentTimeMillis();
+    }
+
+    public void setNumFiles(int numFiles) {
+      this.numFiles = numFiles;
+      this.remainFiles = new AtomicInteger(numFiles);
+    }
+    public void decrementRemainFiles(FadvisedFileRegion filePart, long fileStartTime) {
+      synchronized(remainFiles) {
+        long fileSendTime = System.currentTimeMillis() - fileStartTime;
+        if (fileSendTime > 20 * 1000) {
+          LOG.info("PullServer send too long time: filePos=" + filePart.getPosition() + ", fileLen=" + filePart.getCount());
+          numSlowFile++;
+        }
+        if (fileSendTime > maxTime) {
+          maxTime = fileSendTime;
+        }
+        if (fileSendTime < minTime) {
+          minTime = fileSendTime;
+        }
+        int remain = remainFiles.decrementAndGet();
+        if (remain <= 0) {
+          synchronized(processingStatusMap) {
+            processingStatusMap.remove(requestUri);
+          }
+          LOG.info("PullServer processing status: totalTime=" + (System.currentTimeMillis() - startTime) + " ms, " +
+              "makeFileListTime=" + makeFileListTime + " ms, minTime=" + minTime + " ms, maxTime=" + maxTime + " ms, " +
+              "numFiles=" + numFiles + ", numSlowFile=" + numSlowFile);
+        }
+      }
+    }
+  }
+
   class PullServer extends SimpleChannelUpstreamHandler {
 
     private final Configuration conf;
@@ -369,6 +494,10 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
+      ProcessingStatus processingStatus = new ProcessingStatus(request.getUri().toString());
+      synchronized(processingStatusMap) {
+        processingStatusMap.put(request.getUri().toString(), processingStatus);
+      }
       // Parsing the URL into key-values
       final Map<String, List<String>> params =
           new QueryStringDecoder(request.getUri()).getParameters();
@@ -378,9 +507,8 @@ public class TajoPullServerService extends AbstractService {
       final List<String> subQueryIds = params.get("sid");
       final List<String> partIds = params.get("p");
 
-      if (types == null || taskIdList == null || subQueryIds == null || qids == null
-          || partIds == null) {
-        sendError(ctx, "Required queryId, type, taskIds, subquery Id, and part id",
+      if (types == null || subQueryIds == null || qids == null || partIds == null) {
+        sendError(ctx, "Required queryId, type, subquery Id, and part id",
             BAD_REQUEST);
         return;
       }
@@ -391,21 +519,28 @@ public class TajoPullServerService extends AbstractService {
         return;
       }
 
-      final List<FileChunk> chunks = Lists.newArrayList();
-
+      String partId = partIds.get(0);
       String queryId = qids.get(0);
       String shuffleType = types.get(0);
       String sid = subQueryIds.get(0);
-      String partId = partIds.get(0);
+
+      if (!shuffleType.equals("h") && !shuffleType.equals("s") && taskIdList == null) {
+        sendError(ctx, "Required taskIds", BAD_REQUEST);
+      }
+
       List<String> taskIds = splitMaps(taskIdList);
 
-      LOG.info("PullServer request param: shuffleType=" + shuffleType +
-          ", sid=" + sid + ", partId=" + partId + ", taskIds=" + taskIdList);
-
-      // the working dir of tajo worker for each query
       String queryBaseDir = queryId.toString() + "/output";
 
-      LOG.info("PullServer baseDir: " + conf.get(ConfVars.WORKER_TEMPORAL_DIR.varname) + "/" + queryBaseDir);
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("PullServer request param: shuffleType=" + shuffleType +
+            ", sid=" + sid + ", partId=" + partId + ", taskIds=" + taskIdList);
+
+        // the working dir of tajo worker for each query
+        LOG.debug("PullServer baseDir: " + conf.get(ConfVars.WORKER_TEMPORAL_DIR.varname) + "/" + queryBaseDir);
+      }
+
+      final List<FileChunk> chunks = Lists.newArrayList();
 
       // if a subquery requires a range shuffle
       if (shuffleType.equals("r")) {
@@ -435,50 +570,27 @@ public class TajoPullServerService extends AbstractService {
 
         // if a subquery requires a hash shuffle or a scattered hash shuffle
       } else if (shuffleType.equals("h") || shuffleType.equals("s")) {
-        if (taskIdList.size() == 1 && taskIdList.get(0).trim().equals("all")) {
-          int startPartId = Integer.parseInt(partId.split("-")[0]);
-          int endPartId = Integer.parseInt(partId.split("-")[1]);
-          for (Path eachPath: lDirAlloc.getAllLocalPathsToRead(queryBaseDir + "/" + sid, conf)) {
-            File taskAttemptParentPath = new File(eachPath.toUri().toString());
-            File[] taskAttemptPaths = taskAttemptParentPath.listFiles();
-            if (taskAttemptPaths == null || taskAttemptPaths.length == 0) {
-              continue;
-            }
-            for (File eachTaskAttemptPath: taskAttemptPaths) {
-              for (int i = startPartId; i < endPartId; i++) {
-                File file = new File(eachTaskAttemptPath, "/output/" +  i);
-                if (file.exists()) {
-                  FileChunk chunk = new FileChunk(file, 0, file.length());
-                  chunks.add(chunk);
-                }
-              }
-            }
-          }
-          if (chunks.isEmpty()) {
-            LOG.info("No intermediate data: " + queryBaseDir + "/" + sid);
-            sendError(ctx, NO_CONTENT);
-            return;
-          }
-        } else {
-          for (String ta : taskIds) {
-            if (!lDirAlloc.ifExists(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf)) {
-              LOG.warn(e);
-              sendError(ctx, NO_CONTENT);
-              return;
-            }
-            Path path = localFS.makeQualified(
-                lDirAlloc.getLocalPathToRead(queryBaseDir + "/" + sid + "/" + ta + "/output/" + partId, conf));
-            File file = new File(path.toUri());
-            FileChunk chunk = new FileChunk(file, 0, file.length());
-            chunks.add(chunk);
-          }
+        int partParentId = HashShuffleAppenderManager.getPartParentId(Integer.parseInt(partId), (TajoConf) conf);
+        String partPath = queryBaseDir + "/" + sid + "/hash-shuffle/" + partParentId + "/" + partId;
+        if (!lDirAlloc.ifExists(partPath, conf)) {
+          LOG.warn("Partition shuffle file not exists: " + partPath);
+          sendError(ctx, NO_CONTENT);
+          return;
         }
+
+        Path path = localFS.makeQualified(lDirAlloc.getLocalPathToRead(partPath, conf));
+
+        File file = new File(path.toUri());
+        FileChunk chunk = new FileChunk(file, 0, file.length());
+        chunks.add(chunk);
       } else {
         LOG.error("Unknown shuffle type: " + shuffleType);
         sendError(ctx, "Unknown shuffle type:" + shuffleType, BAD_REQUEST);
         return;
       }
 
+      processingStatus.setNumFiles(chunks.size());
+      processingStatus.makeFileListTime = System.currentTimeMillis() - processingStatus.startTime;
       // Write the content.
       Channel ch = e.getChannel();
       if (chunks.size() == 0) {
@@ -502,7 +614,7 @@ public class TajoPullServerService extends AbstractService {
         ChannelFuture writeFuture = null;
 
         for (FileChunk chunk : file) {
-          writeFuture = sendFile(ctx, ch, chunk);
+          writeFuture = sendFile(ctx, ch, chunk, request.getUri().toString());
           if (writeFuture == null) {
             sendError(ctx, NOT_FOUND);
             return;
@@ -519,17 +631,20 @@ public class TajoPullServerService extends AbstractService {
 
     private ChannelFuture sendFile(ChannelHandlerContext ctx,
                                    Channel ch,
-                                   FileChunk file) throws IOException {
+                                   FileChunk file,
+                                   String requestUri) throws IOException {
+      long startTime = System.currentTimeMillis();
       RandomAccessFile spill = null;
       ChannelFuture writeFuture;
       try {
         spill = new RandomAccessFile(file.getFile(), "r");
+
         if (ch.getPipeline().get(SslHandler.class) == null) {
           final FadvisedFileRegionWrapper filePart = new FadvisedFileRegionWrapper(spill,
               file.startOffset, file.length(), manageOsCache, readaheadLength,
               readaheadPool, file.getFile().getAbsolutePath());
           writeFuture = ch.write(filePart);
-          writeFuture.addListener(new FileCloseListener(filePart));
+          writeFuture.addListener(new FileCloseListener(filePart, requestUri, startTime, TajoPullServerService.this));
         } else {
           // HTTPS cannot be done with zero copy.
           final FadvisedChunkedFile chunk = new FadvisedChunkedFile(spill,

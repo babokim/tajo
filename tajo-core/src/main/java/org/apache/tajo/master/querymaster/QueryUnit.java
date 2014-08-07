@@ -728,6 +728,10 @@ public class QueryUnit implements EventHandler<TaskEvent> {
       return this.volume;
     }
 
+    public long setVolume(long volume) {
+      return this.volume = volume;
+    }
+
     @Override
     public int hashCode() {
       return Objects.hashCode(ebId, taskId, partId, attemptId, host);

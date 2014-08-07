@@ -136,7 +136,7 @@ public class TaskRunnerContext {
     this.localFS = FileSystem.getLocal(systemConf);
 
     // initialize LocalDirAllocator
-    lDirAllocator = new LocalDirAllocator(TajoConf.ConfVars.WORKER_TEMPORAL_DIR.varname);
+    lDirAllocator =  manager.getWorkerContext().getLocalDirAllocator();
 
     ThreadFactoryBuilder builder = new ThreadFactoryBuilder();
     ThreadFactory fetcherFactory = builder.setNameFormat("Fetcher executor #%d").build();

@@ -46,6 +46,7 @@ import org.apache.tajo.pullserver.TajoPullServerService;
 import org.apache.tajo.rpc.RpcChannelFactory;
 import org.apache.tajo.rpc.RpcConnectionPool;
 import org.apache.tajo.rpc.protocolrecords.PrimitiveProtos;
+import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.util.CommonTestingUtil;
 import org.apache.tajo.util.NetUtils;
 import org.apache.tajo.util.StringUtils;
@@ -127,6 +128,10 @@ public class TajoWorker extends CompositeService {
 
   private AsyncDispatcher dispatcher;
 
+  private HashShuffleAppenderManager hashShuffleAppenderManager;
+
+  private LocalDirAllocator lDirAllocator;
+
   public TajoWorker() throws Exception {
     super(TajoWorker.class.getName());
   }
@@ -166,7 +171,7 @@ public class TajoWorker extends CompositeService {
       System.exit(0);
     }
   }
-
+  
   @Override
   public void serviceInit(Configuration conf) throws Exception {
     Runtime.getRuntime().addShutdownHook(new Thread(new ShutdownHook()));
@@ -176,6 +181,7 @@ public class TajoWorker extends CompositeService {
 
     this.connPool = RpcConnectionPool.getPool(systemConf);
     this.workerContext = new WorkerContext();
+    this.lDirAllocator = new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
 
     String resourceManagerClassName = systemConf.getVar(ConfVars.RESOURCE_MANAGER_CLASS);
 
@@ -217,7 +223,7 @@ public class TajoWorker extends CompositeService {
 
     int httpPort = 0;
     if(!yarnContainerMode) {
-      if(taskRunnerMode) {
+      if(taskRunnerMode && TajoPullServerService.getPullServerMode().equalsIgnoreCase("embedded")) {
         pullService = new TajoPullServerService();
         addService(pullService);
       }
@@ -231,6 +237,23 @@ public class TajoWorker extends CompositeService {
     int pullServerPort = 0;
     if(pullService != null){
       pullServerPort = pullService.getPort();
+    } else {
+      // get pull server port
+      long startTime = System.currentTimeMillis();
+      while (true) {
+        pullServerPort = TajoPullServerService.readPullServerPort();
+        if (pullServerPort > 0) {
+          break;
+        }
+        try {
+          Thread.sleep(1000);
+        } catch (InterruptedException e) {
+        }
+        if (System.currentTimeMillis() - startTime > 30 * 1000) {
+          LOG.fatal("TajoWorker stopped cause can't get PullServer port.");
+          System.exit(-1);
+        }
+      }
     }
 
     this.connectionInfo = new WorkerConnectionInfo(
@@ -243,6 +266,13 @@ public class TajoWorker extends CompositeService {
 
     LOG.info("Tajo Worker is initialized. \r\nQueryMaster=" + queryMasterMode + " TaskRunner=" + taskRunnerMode
         + " connection :" + connectionInfo.toString());
+
+    try {
+      this.hashShuffleAppenderManager = new HashShuffleAppenderManager(systemConf);
+    } catch (IOException e) {
+      LOG.fatal(e.getMessage(), e);
+      System.exit(-1);
+    }
   }
 
   private void initWorkerMetrics() {
@@ -425,8 +455,6 @@ public class TajoWorker extends CompositeService {
     protected void cleanup(String strPath) {
       if(deletionService == null) return;
 
-      LocalDirAllocator lDirAllocator = new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
-
       try {
         Iterable<Path> iter = lDirAllocator.getAllLocalPathsToRead(strPath, systemConf);
         FileSystem localFS = FileSystem.getLocal(systemConf);
@@ -440,8 +468,6 @@ public class TajoWorker extends CompositeService {
 
     protected void cleanupTemporalDirectories() {
       if(deletionService == null) return;
-
-      LocalDirAllocator lDirAllocator = new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
 
       try {
         Iterable<Path> iter = lDirAllocator.getAllLocalPathsToRead(".", systemConf);
@@ -508,6 +534,14 @@ public class TajoWorker extends CompositeService {
 
     public TajoSystemMetrics getWorkerSystemMetrics() {
       return workerSystemMetrics;
+    }
+
+    public HashShuffleAppenderManager getHashShuffleAppenderManager() {
+      return hashShuffleAppenderManager;
+    }
+
+    public LocalDirAllocator getLocalDirAllocator() {
+      return lDirAllocator;
     }
   }
 

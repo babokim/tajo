@@ -31,12 +31,14 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.enforce.Enforcer;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.query.QueryContext;
+import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.Fragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
 import org.apache.tajo.util.TUtil;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
@@ -72,15 +74,21 @@ public class TaskAttemptContext {
   private DataChannel dataChannel;
   private Enforcer enforcer;
   private QueryContext queryContext;
+  private TaskRunnerContext taskRunnerContext;
 
   /** a output volume for each partition */
   private Map<Integer, Long> partitionOutputVolume;
+  private HashShuffleAppenderManager hashShuffleAppenderManager;
 
-  public TaskAttemptContext(TajoConf conf, QueryContext queryContext, final QueryUnitAttemptId queryId,
+  public TaskAttemptContext(final TajoConf conf,
+                            final QueryContext queryContext,
+                            final TaskRunnerContext taskRunnerContext,
+                            final QueryUnitAttemptId queryId,
                             final FragmentProto[] fragments,
                             final Path workDir) {
     this.conf = conf;
     this.queryContext = queryContext;
+    this.taskRunnerContext = taskRunnerContext;
     this.queryId = queryId;
 
     if (fragments != null) {
@@ -101,12 +109,26 @@ public class TaskAttemptContext {
     state = TaskAttemptState.TA_PENDING;
 
     this.partitionOutputVolume = Maps.newHashMap();
+
+    if (this.taskRunnerContext != null) {
+      this.hashShuffleAppenderManager = this.taskRunnerContext.getWorkerContext().getHashShuffleAppenderManager();
+    } else {
+      LOG.error("HashShuffleAppenderManager ");
+      try {
+        this.hashShuffleAppenderManager = new HashShuffleAppenderManager(conf);
+      } catch (IOException e) {
+        LOG.error(e.getMessage(), e);
+      }
+    }
   }
 
   @VisibleForTesting
-  public TaskAttemptContext(TajoConf conf, QueryContext queryContext, final QueryUnitAttemptId queryId,
-                            final Fragment [] fragments,  final Path workDir) {
-    this(conf, queryContext, queryId, FragmentConvertor.toFragmentProtoArray(fragments), workDir);
+  public TaskAttemptContext(final TajoConf conf,
+                            final QueryContext queryContext,
+                            final QueryUnitAttemptId queryId,
+                            final Fragment [] fragments,
+                            final Path workDir) {
+    this(conf, queryContext, null, queryId, FragmentConvertor.toFragmentProtoArray(fragments), workDir);
   }
 
   public TajoConf getConf() {
@@ -345,5 +367,13 @@ public class TaskAttemptContext {
 
   public QueryContext getQueryContext() {
     return queryContext;
+  }
+
+  public QueryUnitAttemptId getQueryId() {
+    return queryId;
+  }
+
+  public HashShuffleAppenderManager getHashShuffleAppenderManager() {
+    return hashShuffleAppenderManager;
   }
 }

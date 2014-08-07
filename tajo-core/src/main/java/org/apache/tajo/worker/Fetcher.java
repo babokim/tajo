@@ -157,7 +157,7 @@ public class Fetcher {
       }
 
       this.finishTime = System.currentTimeMillis();
-      LOG.info("Status: " + getState() + ", URI:" + uri);
+      LOG.info("Fetcher finished:" + (finishTime - startTime) + " ms, " + getState() + ", URI:" + uri);
       if (timer != null) {
         timer.stop();
       }
@@ -256,6 +256,7 @@ public class Fetcher {
         }
 
         if(fileLen == length){
+          IOUtils.cleanup(LOG, fc, raf);
           finishTime = System.currentTimeMillis();
           state = TajoProtos.FetcherState.FETCH_FINISHED;
         }

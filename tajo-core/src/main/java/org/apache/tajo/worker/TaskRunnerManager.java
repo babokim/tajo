@@ -193,6 +193,7 @@ public class TaskRunnerManager extends CompositeService implements EventHandler<
       if(taskRunnerContext != null){
         taskRunnerContext.stop();
         TupleCache.getInstance().removeBroadcastCache(event.getExecutionBlockId());
+        workerContext.getHashShuffleAppenderManager().close(event.getExecutionBlockId());
       }
       LOG.info("Stopped execution block:" + event.getExecutionBlockId());
     }
