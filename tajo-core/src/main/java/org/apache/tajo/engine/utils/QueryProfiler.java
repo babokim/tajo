@@ -135,6 +135,26 @@ public class QueryProfiler {
       return sb.toString();
     }
 
+    public String toJSONString() {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append('[');
+
+        for (String key: metricsValues.keySet()) {
+            sb.append('[');
+            sb.append('"').append(key).append('"');
+            sb.append(',');
+            sb.append(metricsValues.get(key)).append(',').
+                    append(minValues.get(key)).append(',').
+                    append(maxValues.get(key)).append("],");
+        }
+        sb.deleteCharAt(sb.length()-1);
+
+        sb.append(']');
+
+        return sb.toString();
+    }
+
     public QueryProfileMetricsProto getProto() {
       try {
         List<KeyValueProto> values = new ArrayList<KeyValueProto>();

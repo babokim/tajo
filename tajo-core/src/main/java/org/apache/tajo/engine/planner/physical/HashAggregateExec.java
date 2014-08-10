@@ -135,7 +135,7 @@ public class HashAggregateExec extends AggregationExec {
   public void close() throws IOException {
     super.close();
     hashTable.clear();
-    putProfileMetrics(getClass().getSimpleName() + ".compute.join.nanoTime", nanoTimeJoin);
+    putProfileMetrics(getClass().getSimpleName() + ".computeJoin.nanoTime", nanoTimeJoin);
     putProfileMetrics(getClass().getSimpleName() + ".compute.nanoTime", nanoTimeCompute);
     closeProfile();
     hashTable = null;

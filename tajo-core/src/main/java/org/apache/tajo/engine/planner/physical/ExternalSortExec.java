@@ -784,10 +784,10 @@ public class ExternalSortExec extends SortExec {
       executorService = null;
     }
 
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.SortScan", nanoTimeSortScan);
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.SortWrite", nanoTimeSortWrite);
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.MemorySort", nanoTimeMemorySort);
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTime.Sort", nanoTimeSort);
+    putProfileMetrics(getClass().getSimpleName() + ".SortScan.nanoTime", nanoTimeSortScan);
+    putProfileMetrics(getClass().getSimpleName() + ".SortWrite.nanoTime", nanoTimeSortWrite);
+    putProfileMetrics(getClass().getSimpleName() + ".MemorySort.nanoTime", nanoTimeMemorySort);
+    putProfileMetrics(getClass().getSimpleName() + ".Sort.nanoTime", nanoTimeSort);
     putProfileMetrics(getClass().getSimpleName() + ".numNextMemory", numNextMemory);
 
     closeProfile();
