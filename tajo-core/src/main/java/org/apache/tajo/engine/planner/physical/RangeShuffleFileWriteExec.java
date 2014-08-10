@@ -30,6 +30,7 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.PlannerUtil;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.index.bst.BSTIndex;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -56,6 +57,7 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
                                    final SortSpec[] sortSpecs) throws IOException {
     super(context, inSchema, outSchema, child);
     this.sortSpecs = sortSpecs;
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
@@ -88,6 +90,8 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
     this.indexWriter.open();
   }
 
+  String profileKey = getClass().getSimpleName() + ".next";
+
   @Override
   public Tuple next() throws IOException {
     Tuple tuple;
@@ -95,19 +99,23 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
     Tuple prevKeyTuple = null;
     long offset;
 
-
-    while((tuple = child.next()) != null) {
-      offset = appender.getOffset();
-      appender.addTuple(tuple);
-      keyTuple = new VTuple(keySchema.size());
-      RowStoreUtil.project(tuple, keyTuple, indexKeys);
-      if (prevKeyTuple == null || !prevKeyTuple.equals(keyTuple)) {
-        indexWriter.write(keyTuple, offset);
-        prevKeyTuple = keyTuple;
+    stopWatch.reset(0);
+    try {
+      while ((tuple = child.next()) != null) {
+        offset = appender.getOffset();
+        appender.addTuple(tuple);
+        keyTuple = new VTuple(keySchema.size());
+        RowStoreUtil.project(tuple, keyTuple, indexKeys);
+        if (prevKeyTuple == null || !prevKeyTuple.equals(keyTuple)) {
+          indexWriter.write(keyTuple, offset);
+          prevKeyTuple = keyTuple;
+        }
       }
-    }
 
-    return null;
+      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
+    }
   }
 
   @Override
@@ -125,6 +133,9 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
     // Collect statistics data
     context.setResultStats(appender.getStats());
     context.addShuffleFileOutput(0, context.getTaskId().toString());
+
+    closeProfile();
+
     appender = null;
     indexWriter = null;
   }

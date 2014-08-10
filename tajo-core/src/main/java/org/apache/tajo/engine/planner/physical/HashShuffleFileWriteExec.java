@@ -31,6 +31,7 @@ import org.apache.tajo.storage.AbstractStorageManager;
 import org.apache.tajo.storage.HashShuffleAppender;
 import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.storage.Tuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -74,11 +75,15 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     }
     this.partitioner = new HashPartitioner(shuffleKeyIds, numShuffleOutputs);
     this.hashShuffleAppenderManager = context.getHashShuffleAppenderManager();
+
+    stopWatch = new StopWatch(5);
   }
 
+  String profileKey = getClass().getSimpleName() + ".next";
   @Override
   public void init() throws IOException {
     super.init();
+    nanoTimeInit = stopWatch.checkNano(1);
   }
   
   private HashShuffleAppender getAppender(int partId) throws IOException {
@@ -94,6 +99,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
   Map<Integer, Long> partitionStats = new HashMap<Integer, Long>();
   Map<Integer, List<Tuple>> partitionTuples = new HashMap<Integer, List<Tuple>>();
 
+  long nanoTimeFlush;
   @Override
   public Tuple next() throws IOException {
     try {
@@ -101,6 +107,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       int partId;
       int tupleCount = 0;
       long numRows = 0;
+      stopWatch.reset(0);
       while ((tuple = child.next()) != null) {
         tupleCount++;
         numRows++;
@@ -146,6 +153,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
         entry.getValue().clear();
       }
 
+      stopWatch.reset(2);
       // set table stats
       List<TableStats> statSet = new ArrayList<TableStats>();
       for (Integer eachPartId : partitionStats.keySet()) {
@@ -176,11 +184,14 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
 
       partitionStats.clear();
       partitionTuples.clear();
-
+      
+      nanoTimeFlush += stopWatch.checkNano(2);
       return null;
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
       throw new IOException(e);
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 
@@ -196,7 +207,8 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       appenderMap.clear();
       appenderMap = null;
     }
-
+    putProfileMetrics(getClass().getSimpleName() + ".flush.nanoTime", nanoTimeFlush);
+    closeProfile();
     partitioner = null;
     plan = null;
 

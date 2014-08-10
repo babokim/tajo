@@ -69,6 +69,7 @@ import static org.apache.tajo.ipc.TajoWorkerProtocol.SortEnforce;
 public class PhysicalPlannerImpl implements PhysicalPlanner {
   private static final Log LOG = LogFactory.getLog(PhysicalPlannerImpl.class);
   private static final int UNGENERATED_PID = -1;
+  private final long INNER_JOIN_INMEMORY_HASH_THRESHOLD;
 
   protected final TajoConf conf;
   protected final AbstractStorageManager sm;
@@ -76,6 +77,8 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
   public PhysicalPlannerImpl(final TajoConf conf, final AbstractStorageManager sm) {
     this.conf = conf;
     this.sm = sm;
+
+    this.INNER_JOIN_INMEMORY_HASH_THRESHOLD = conf.getLongVar(ConfVars.EXECUTOR_INNER_JOIN_INMEMORY_HASH_THRESHOLD);
   }
 
   public PhysicalExec createPlan(final TaskAttemptContext context, final LogicalNode logicalPlan)

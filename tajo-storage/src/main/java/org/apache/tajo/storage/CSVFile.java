@@ -36,10 +36,13 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.NullDatum;
 import org.apache.tajo.exception.UnsupportedException;
+import org.apache.tajo.storage.ProfileContext.DummyProfileContext;
 import org.apache.tajo.storage.compress.CodecPool;
 import org.apache.tajo.storage.exception.AlreadyExistsStorageException;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.rcfile.NonSyncByteArrayOutputStream;
+import org.apache.tajo.util.Bytes;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.util.BytesUtils;
 
 import java.io.*;
@@ -292,6 +295,8 @@ public class CSVFile {
     private NonSyncByteArrayOutputStream buffer;
     private SerializerDeserializer serde;
 
+    private ProfileContext profileContext;
+
     @Override
     public void init() throws IOException {
       fileOffsets = new ArrayList<Long>();
@@ -362,6 +367,14 @@ public class CSVFile {
         pos += reader.readLine(new Text(), 0, maxBytesToConsume(pos));
       }
       eof = false;
+
+      profileContext = ProfileContext.contextThreadLocal.get();
+      stopWatch = new StopWatch(3);
+      if (profileContext == null) {
+        profileContext = new DummyProfileContext(false);
+      } else {
+        LOG.info(">>>>>>>>>>>>>ProfileContext: " + profileContext.getId());
+      }
       page();
     }
 
@@ -446,15 +459,26 @@ public class CSVFile {
       }
     }
 
+    String profileNextKey = getClass().getSimpleName() + ".next";
+    String profileMakeTupleKey = getClass().getSimpleName() + ".makeTuple";
+    String profilePageKey = getClass().getSimpleName() + ".page";
+    long nanoTimeNext;
+    long nanoTimeMakeTuple;
+    long nanoTimePage;
+    long numInTuple;
+    StopWatch stopWatch;
+
     @Override
     public Tuple next() throws IOException {
+      stopWatch.reset(0);
       try {
         if (currentIdx == validIdx) {
           if (eof) {
             return null;
           } else {
+            stopWatch.reset(1);
             page();
-
+            nanoTimePage += stopWatch.checkNano(1);
             if(currentIdx == validIdx){
               return null;
             }
@@ -465,15 +489,21 @@ public class CSVFile {
         if(!isCompress()){
           offset = fileOffsets.get(currentIdx);
         }
-
+        stopWatch.reset(2);
         byte[][] cells = BytesUtils.splitPreserveAllTokens(buffer.getData(), startOffsets.get(currentIdx),
             rowLengthList.get(currentIdx), delimiter, targetColumnIndexes);
         currentIdx++;
-        return new LazyTuple(schema, cells, offset, nullChars, serde);
+        Tuple result =  new LazyTuple(schema, cells, offset, nullChars, serde);
+        nanoTimeMakeTuple += stopWatch.checkNano(2);
+
+        return result;
       } catch (Throwable t) {
         LOG.error("Tuple list length: " + (fileOffsets != null ? fileOffsets.size() : 0), t);
         LOG.error("Tuple list current index: " + currentIdx, t);
         throw new IOException(t);
+      } finally {
+        nanoTimeNext += stopWatch.checkNano(0);
+        numInTuple++;
       }
     }
 
@@ -505,6 +535,14 @@ public class CSVFile {
         fis = null;
         if (LOG.isDebugEnabled()) {
           LOG.debug("CSVScanner processed record:" + recordCount);
+        }
+
+        if (profileContext != null) {
+          profileContext.addProfileMetrics(
+              this.getClass().getSimpleName(),
+              new String[]{profileNextKey, profileMakeTupleKey, profilePageKey, getClass().getSimpleName() + ".numInTuple"},
+              new long[]{nanoTimeNext, nanoTimeMakeTuple, nanoTimePage, numInTuple}
+          );
         }
       } finally {
         if (decompressor != null) {

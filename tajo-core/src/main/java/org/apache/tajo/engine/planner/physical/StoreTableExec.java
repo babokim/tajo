@@ -20,7 +20,6 @@ package org.apache.tajo.engine.planner.physical;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.TableMeta;
@@ -30,7 +29,11 @@ import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.engine.planner.logical.InsertNode;
 import org.apache.tajo.engine.planner.logical.PersistentStoreNode;
 import org.apache.tajo.engine.query.QueryContext;
-import org.apache.tajo.storage.*;
+import org.apache.tajo.storage.Appender;
+import org.apache.tajo.storage.StorageConstants;
+import org.apache.tajo.storage.StorageManagerFactory;
+import org.apache.tajo.storage.Tuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -51,7 +54,8 @@ public class StoreTableExec extends UnaryPhysicalExec {
   private long maxPerFileSize = Long.MAX_VALUE;
   private int writtenFileNum = 0;
   private Path lastFileName;
-
+  private long writtenTupleSize = 0;
+  
   public StoreTableExec(TaskAttemptContext context, PersistentStoreNode plan, PhysicalExec child) throws IOException {
     super(context, plan.getInSchema(), plan.getOutSchema(), child);
     this.plan = plan;
@@ -59,9 +63,11 @@ public class StoreTableExec extends UnaryPhysicalExec {
     if (context.getQueryContext().get(QueryContext.OUTPUT_PER_FILE_SIZE) != null) {
       maxPerFileSize = Long.valueOf(context.getQueryContext().get(QueryContext.OUTPUT_PER_FILE_SIZE));
     }
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
+    stopWatch.reset(1);
     super.init();
 
     if (plan.hasOptions()) {
@@ -75,8 +81,8 @@ public class StoreTableExec extends UnaryPhysicalExec {
       meta.putOption(StorageConstants.CSVFILE_NULL, nullChar);
     }
 
-
     openNewFile(writtenFileNum);
+    nanoTimeInit = stopWatch.checkNano(1);
   }
 
   public void openNewFile(int suffixId) throws IOException {
@@ -103,23 +109,34 @@ public class StoreTableExec extends UnaryPhysicalExec {
    */
   @Override
   public Tuple next() throws IOException {
-    while((tuple = child.next()) != null) {
-      appender.addTuple(tuple);
-
-      if (maxPerFileSize <= appender.getEstimatedOutputSize()) {
-        appender.close();
-        writtenFileNum++;
-
-        if (sumStats == null) {
-          sumStats = appender.getStats();
-        } else {
-          StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
+    stopWatch.reset(0);
+    try {
+      while (true) {
+        tuple = child.next();
+        if (tuple == null) {
+          break;
         }
-        openNewFile(writtenFileNum);
-      }
-    }
+        numOutTuple++;
+        appender.addTuple(tuple);
+        //writtenTupleSize += MemoryUtil.calculateMemorySize(tuple);
         
-    return null;
+        if (maxPerFileSize <= appender.getEstimatedOutputSize()) {
+          appender.close();
+          writtenFileNum++;
+
+          if (sumStats == null) {
+            sumStats = appender.getStats();
+          } else {
+            StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
+          }
+          openNewFile(writtenFileNum);
+        }
+      }
+
+      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
+    }
   }
 
   @Override
@@ -144,7 +161,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
         context.addShuffleFileOutput(0, context.getTaskId().toString());
       }
     }
-
+    closeProfile();
     appender = null;
     plan = null;
   }

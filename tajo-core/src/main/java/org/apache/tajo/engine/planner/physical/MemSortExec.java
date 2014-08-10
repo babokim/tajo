@@ -18,6 +18,7 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 import org.apache.tajo.engine.planner.logical.SortNode;
 import org.apache.tajo.storage.Tuple;
@@ -39,31 +40,46 @@ public class MemSortExec extends SortExec {
                      SortNode plan, PhysicalExec child) {
     super(context, plan.getInSchema(), plan.getOutSchema(), child, plan.getSortKeys());
     this.plan = plan;
+
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
+    stopWatch.reset(1);
     super.init();
     this.tupleSlots = new ArrayList<Tuple>(1000);
+    nanoTimeInit = stopWatch.checkNano(1);
   }
+
+  long nanoTimeSort;
+  long consumptionMemory;
 
   @Override
   public Tuple next() throws IOException {
+    stopWatch.reset(0);
+    try {
+      if (!sorted) {
+        stopWatch.reset(2);
+        Tuple tuple;
+        while ((tuple = child.next()) != null) {
+          tupleSlots.add(new VTuple(tuple));
+        }
 
-    if (!sorted) {
-      Tuple tuple;
-      while ((tuple = child.next()) != null) {
-        tupleSlots.add(new VTuple(tuple));
+        Collections.sort(tupleSlots, getComparator());
+        this.iterator = tupleSlots.iterator();
+        sorted = true;
+        nanoTimeSort = stopWatch.checkNano(2);
       }
-      
-      Collections.sort(tupleSlots, getComparator());
-      this.iterator = tupleSlots.iterator();
-      sorted = true;
-    }
-    
-    if (iterator.hasNext()) {
-      return this.iterator.next();
-    } else {
-      return null;
+
+      if (iterator.hasNext()) {
+        numOutTuple++;
+        Tuple tuple = this.iterator.next();
+        return tuple;
+      } else {
+        return null;
+      }
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 
@@ -78,6 +94,8 @@ public class MemSortExec extends SortExec {
   public void close() throws IOException {
     super.close();
     tupleSlots.clear();
+    putProfileMetrics(getClass().getSimpleName() + ".sort.nanoTime", nanoTimeSort);
+    closeProfile();
     tupleSlots = null;
     iterator = null;
     plan = null;

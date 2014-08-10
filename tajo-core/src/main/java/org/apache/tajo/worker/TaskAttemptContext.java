@@ -31,6 +31,9 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.enforce.Enforcer;
 import org.apache.tajo.engine.planner.global.DataChannel;
 import org.apache.tajo.engine.query.QueryContext;
+import org.apache.tajo.engine.utils.QueryProfiler;
+import org.apache.tajo.engine.utils.QueryProfiler.QueryProfileMetrics;
+import org.apache.tajo.storage.ProfileContext;
 import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.Fragment;
@@ -50,8 +53,9 @@ import static org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 /**
  * Contains the information about executing subquery.
  */
-public class TaskAttemptContext {
+public class TaskAttemptContext extends ProfileContext {
   private static final Log LOG = LogFactory.getLog(TaskAttemptContext.class);
+
   private final TajoConf conf;
   private final Map<String, List<FragmentProto>> fragmentMap = Maps.newHashMap();
 
@@ -86,6 +90,7 @@ public class TaskAttemptContext {
                             final QueryUnitAttemptId queryId,
                             final FragmentProto[] fragments,
                             final Path workDir) {
+    super(QueryProfiler.isEnabledProfile(queryContext, conf));
     this.conf = conf;
     this.queryContext = queryContext;
     this.taskRunnerContext = taskRunnerContext;
@@ -375,5 +380,23 @@ public class TaskAttemptContext {
 
   public HashShuffleAppenderManager getHashShuffleAppenderManager() {
     return hashShuffleAppenderManager;
+  }
+
+  public String getId() {
+    if (getTaskId() == null) {
+      return null;
+    }
+    return getTaskId().toString();
+  }
+
+  @Override
+  public void addProfileMetrics(String operationName, String[] metricsKeys, long[] values) {
+    if (isEnabledProfile()) {
+      QueryProfileMetrics profileMetrics = new QueryProfileMetrics(operationName);
+      for (int i = 0; i < metricsKeys.length; i++) {
+        profileMetrics.addValue(metricsKeys[i], values[i]);
+      }
+      QueryProfiler.addProfileMetrics(getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);
+    }
   }
 }

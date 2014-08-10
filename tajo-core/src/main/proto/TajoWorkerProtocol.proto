@@ -184,6 +184,20 @@ message ExecutionBlockListProto {
     repeated ExecutionBlockIdProto executionBlockId = 1;
 }
 
+message QueryProfileDataListProto {
+  message QueryProfileMetricsProto {
+    repeated KeyValueProto metricsValues = 1;
+    repeated KeyValueProto minValues = 2;
+    repeated KeyValueProto maxValues = 3;
+  }
+  message EBQueryProfileData {
+    required string executionBlockId = 1;
+    repeated QueryProfileMetricsProto profileMetrics = 2;
+  }
+
+  repeated EBQueryProfileData ebProfileDatas = 1;
+}
+
 service TajoWorkerProtocolService {
   rpc ping (QueryUnitAttemptIdProto) returns (BoolProto);
 
@@ -193,6 +207,7 @@ service TajoWorkerProtocolService {
   rpc killTaskAttempt(QueryUnitAttemptIdProto) returns (BoolProto);
   rpc cleanup(QueryIdProto) returns (BoolProto);
   rpc cleanupExecutionBlocks(ExecutionBlockListProto) returns (BoolProto);
+  rpc getQueryProfileData(QueryIdProto) returns (QueryProfileDataListProto);
 }
 
 message EnforceProperty {

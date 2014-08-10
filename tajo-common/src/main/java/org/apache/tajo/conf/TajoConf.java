@@ -178,7 +178,7 @@ public class TajoConf extends Configuration {
     WORKER_RESOURCE_AVAILABLE_CPU_CORES("tajo.worker.resource.cpu-cores", 1),
     WORKER_RESOURCE_AVAILABLE_MEMORY_MB("tajo.worker.resource.memory-mb", 1024),
     WORKER_RESOURCE_AVAILABLE_DISKS("tajo.worker.resource.disks", 1.0f),
-    WORKER_EXECUTION_MAX_SLOTS("tajo.worker.parallel-execution.max-num", Runtime.getRuntime().availableProcessors() * 2),
+    WORKER_EXECUTION_MAX_SLOTS("tajo.worker.parallel-execution.max-num", 2),
     WORKER_RESOURCE_DFS_DIR_AWARE("tajo.worker.resource.dfs-dir-aware", false),
 
     // Tajo Worker Dedicated Resources
@@ -202,7 +202,7 @@ public class TajoConf extends Configuration {
     /** how many launching TaskRunners in parallel */
     YARN_RM_QUERY_MASTER_MEMORY_MB("tajo.querymaster.memory-mb", 512),
     YARN_RM_QUERY_MASTER_DISKS("tajo.yarn-rm.querymaster.disks", 1),
-    YARN_RM_TASKRUNNER_LAUNCH_PARALLEL_NUM("tajo.yarn-rm.parallel-task-runner-launcher-num", Runtime.getRuntime().availableProcessors() * 2),
+    YARN_RM_TASKRUNNER_LAUNCH_PARALLEL_NUM("tajo.yarn-rm.parallel-task-runner-launcher-num", 16),
     YARN_RM_WORKER_NUMBER_PER_NODE("tajo.yarn-rm.max-worker-num-per-node", 8),
 
     //////////////////////////////////
@@ -217,9 +217,9 @@ public class TajoConf extends Configuration {
     SHUFFLE_SSL_ENABLED_KEY("tajo.pullserver.ssl.enabled", false),
     SHUFFLE_FILE_FORMAT("tajo.shuffle.file-format", "RAW"),
     SHUFFLE_FETCHER_PARALLEL_EXECUTION_MAX_NUM("tajo.shuffle.fetcher.parallel-execution.max-num", 2),
-    SHUFFLE_FETCHER_CHUNK_MAX_SIZE("tajo.shuffle.fetcher.chunk.max-size",  8192),
-    SHUFFLE_FETCHER_READ_TIMEOUT("tajo.shuffle.fetcher.read.timeout-sec", 120),
-    SHUFFLE_FETCHER_READ_RETRY_MAX_NUM("tajo.shuffle.fetcher.read.retry.max-num", 20),
+    SHUFFLE_FETCHER_CHUNK_MAX_SIZE("tajo.shuffle.fetcher.chunk.max-size",  8192 * 8),
+    SHUFFLE_FETCHER_READ_TIMEOUT("tajo.shuffle.fetcher.read.timeout-sec", 5),
+    SHUFFLE_FETCHER_READ_RETRY_MAX_NUM("tajo.shuffle.fetcher.read.retry.max-num", 5),
 
     //////////////////////////////////
     // Storage Configuration
@@ -356,7 +356,9 @@ public class TajoConf extends Configuration {
     COUNT_DISTINCT_ALGORITHM("tajo.groupby.distinct.algorithm", "multi"),
     //JOB_SCHEDULER
     JOB_SCHEDULER_CLASS("tajo.job.scheduler.class", "org.apache.tajo.scheduler.SimpleFifoScheduler"),
-    JOB_QUEUE_NAMES("tajo.job.queue.names", "default")
+    JOB_QUEUE_NAMES("tajo.job.queue.names", "default"),
+
+    ENABLE_QUERY_PROFILE("tajo.enable.query.profile", true)
     ;
 
     public final String varname;

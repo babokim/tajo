@@ -23,7 +23,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.SchemaObject;
 import org.apache.tajo.catalog.statistics.TableStats;
+import org.apache.tajo.engine.utils.QueryProfiler;
+import org.apache.tajo.engine.utils.QueryProfiler.QueryProfileMetrics;
 import org.apache.tajo.storage.Tuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -34,6 +37,12 @@ public abstract class PhysicalExec implements SchemaObject {
   protected Schema inSchema;
   protected Schema outSchema;
   protected int outColumnNum;
+
+  protected long numOutTuple;
+  protected long numInTuple;
+  protected long nanoTimeInit;
+  protected long nanoTimeNext;
+  protected StopWatch stopWatch;
 
   public PhysicalExec(final TaskAttemptContext context, final Schema inSchema,
                       final Schema outSchema) {
@@ -75,5 +84,29 @@ public abstract class PhysicalExec implements SchemaObject {
 
   public TableStats getInputStats() {
     return null;
+  }
+
+  protected QueryProfileMetrics profileMetrics;
+
+  protected void putProfileMetrics(String metricsName, long value) {
+    if (context.isEnabledProfile()) {
+      if (profileMetrics == null) {
+        profileMetrics = new QueryProfileMetrics(getClass().getSimpleName());
+      }
+      profileMetrics.addValue(metricsName, value);
+    }
+  }
+
+  protected void closeProfile() {
+    if (context.isEnabledProfile()) {
+      putProfileMetrics(getClass().getSimpleName() + ".init.nanoTime", nanoTimeInit);
+      putProfileMetrics(getClass().getSimpleName() + ".next.nanoTime", nanoTimeNext);
+      putProfileMetrics(getClass().getSimpleName() + ".inTuples", numInTuple);
+      putProfileMetrics(getClass().getSimpleName() + ".outTuples", numOutTuple);
+
+      if (context.getTaskId() != null) {
+        QueryProfiler.addProfileMetrics(context.getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);
+      }
+    }
   }
 }
