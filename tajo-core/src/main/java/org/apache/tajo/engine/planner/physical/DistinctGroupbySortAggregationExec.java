@@ -26,6 +26,7 @@ import org.apache.tajo.engine.planner.logical.DistinctGroupbyNode;
 import org.apache.tajo.engine.planner.logical.GroupbyNode;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.storage.VTuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -71,6 +72,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
     for (SortAggregateExec eachExec: aggregateExecs) {
       eachExec.init();
     }
+    stopWatch = new StopWatch(10);
   }
 
   boolean first = true;
@@ -80,6 +82,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
     if (finished) {
       return null;
     }
+    stopWatch.reset(0);
 
     boolean allNull = true;
 
@@ -101,6 +104,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
     // If DistinctGroupbySortAggregationExec received NullDatum and didn't has any grouping keys,
     // it should return primitive values for NullDatum.
     if (allNull && aggregateExecs[0].groupingKeyNum == 0 && first)   {
+      this.nanoTimeNext += stopWatch.checkNano(0);
       return getEmptyTuple();
     }
 
@@ -108,6 +112,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
 
     if (allNull) {
       finished = true;
+      this.nanoTimeNext += stopWatch.checkNano(0);
       return null;
     }
 
@@ -123,6 +128,7 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
         mergeTupleIndex++;
       }
     }
+    this.nanoTimeNext += stopWatch.checkNano(0);
     return mergedTuple;
   }
 
@@ -155,12 +161,14 @@ public class DistinctGroupbySortAggregationExec extends PhysicalExec {
 
   @Override
   public void close() throws IOException {
+    int pid = plan.getPID();
     plan = null;
     if (aggregateExecs != null) {
       for (SortAggregateExec eachExec: aggregateExecs) {
         eachExec.close();
       }
     }
+    closeProfile(pid);
   }
 
   @Override

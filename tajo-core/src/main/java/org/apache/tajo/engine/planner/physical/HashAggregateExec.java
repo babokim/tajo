@@ -133,11 +133,12 @@ public class HashAggregateExec extends AggregationExec {
 
   @Override
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     hashTable.clear();
-    putProfileMetrics(getClass().getSimpleName() + ".computeJoin.nanoTime", nanoTimeJoin);
-    putProfileMetrics(getClass().getSimpleName() + ".compute.nanoTime", nanoTimeCompute);
-    closeProfile();
+    //putProfileMetrics(pid, getClass().getSimpleName() + ".computeJoin.nanoTime." + plan.getPID(), nanoTimeJoin);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".compute.nanoTime", nanoTimeCompute);
+    closeProfile(pid);
     hashTable = null;
     iterator = null;
   }

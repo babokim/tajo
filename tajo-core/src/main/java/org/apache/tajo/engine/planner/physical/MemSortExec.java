@@ -92,10 +92,11 @@ public class MemSortExec extends SortExec {
 
   @Override
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     tupleSlots.clear();
-    putProfileMetrics(getClass().getSimpleName() + ".sort.nanoTime", nanoTimeSort);
-    closeProfile();
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".sort.nanoTime", nanoTimeSort);
+    closeProfile(pid);
     tupleSlots = null;
     iterator = null;
     plan = null;

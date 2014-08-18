@@ -201,14 +201,15 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
   }
 
   @Override
-  public void close() throws IOException{
+  public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     if (appenderMap != null) {
       appenderMap.clear();
       appenderMap = null;
     }
-    putProfileMetrics(getClass().getSimpleName() + ".flush.nanoTime", nanoTimeFlush);
-    closeProfile();
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".flush.nanoTime", nanoTimeFlush);
+    closeProfile(pid);
     partitioner = null;
     plan = null;
 

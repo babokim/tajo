@@ -442,7 +442,8 @@ public class Task {
       LOG.error(e.getMessage(), e);
       aborted = true;
     } finally {
-      context.addProfileMetrics("Task", new String[]{"fetch", "total"}, new long[]{nanoTimeFetch, System.nanoTime() - nanoTimeStart});
+      context.addProfileMetrics("Task", new String[]{"fetch", "fetch.write", "total"},
+          new long[]{nanoTimeFetch, context.getFetchWriteNanoTime(), System.nanoTime() - nanoTimeStart});
       taskRunnerContext.completedTasksNum.incrementAndGet();
       QueryMasterProtocol.QueryMasterProtocolService.Interface queryMasterStub =  taskRunnerContext.getQueryMasterStub();
       if (killed || aborted) {
@@ -680,7 +681,7 @@ public class Task {
             }
           }
           storeFile = new File(storeDir, "in_" + i);
-          Fetcher fetcher = new Fetcher(taskRunnerContext.getConf(), uri, storeFile, channelFactory);
+          Fetcher fetcher = new Fetcher(context, taskRunnerContext.getConf(), uri, storeFile, channelFactory);
           runnerList.add(fetcher);
           i++;
         }

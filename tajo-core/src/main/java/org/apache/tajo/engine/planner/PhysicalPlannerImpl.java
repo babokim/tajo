@@ -752,7 +752,7 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
           specs[i] = new SortSpec(columns[i]);
         }
       }
-      return new RangeShuffleFileWriteExec(ctx, sm, subOp, plan.getInSchema(), plan.getInSchema(), sortSpecs);
+      return new RangeShuffleFileWriteExec(plan, ctx, sm, subOp, plan.getInSchema(), plan.getInSchema(), sortSpecs);
 
     case NONE_SHUFFLE:
       return new StoreTableExec(ctx, plan, subOp);

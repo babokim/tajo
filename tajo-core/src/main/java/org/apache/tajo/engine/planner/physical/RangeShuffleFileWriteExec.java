@@ -28,6 +28,7 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.PlannerUtil;
+import org.apache.tajo.engine.planner.logical.LogicalNode;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.index.bst.BSTIndex;
 import org.apache.tajo.util.StopWatch;
@@ -51,11 +52,13 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
   private TupleComparator comp;
   private FileAppender appender;
   private TableMeta meta;
+  private LogicalNode plan;
 
-  public RangeShuffleFileWriteExec(final TaskAttemptContext context, final AbstractStorageManager sm,
+  public RangeShuffleFileWriteExec(final LogicalNode plan, final TaskAttemptContext context, final AbstractStorageManager sm,
                                    final PhysicalExec child, final Schema inSchema, final Schema outSchema,
                                    final SortSpec[] sortSpecs) throws IOException {
     super(context, inSchema, outSchema, child);
+    this.plan = plan;
     this.sortSpecs = sortSpecs;
     stopWatch = new StopWatch(5);
   }
@@ -123,6 +126,7 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
   }
 
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
 
     appender.flush();
@@ -134,7 +138,7 @@ public class RangeShuffleFileWriteExec extends UnaryPhysicalExec {
     context.setResultStats(appender.getStats());
     context.addShuffleFileOutput(0, context.getTaskId().toString());
 
-    closeProfile();
+    closeProfile(pid);
 
     appender = null;
     indexWriter = null;

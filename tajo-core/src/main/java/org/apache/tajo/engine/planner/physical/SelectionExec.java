@@ -28,6 +28,7 @@ import java.io.IOException;
 
 public class SelectionExec extends UnaryPhysicalExec  {
   private final EvalNode qual;
+  SelectionNode plan;
 
   public SelectionExec(TaskAttemptContext context,
                        SelectionNode plan,
@@ -35,9 +36,8 @@ public class SelectionExec extends UnaryPhysicalExec  {
     super(context, plan.getInSchema(), plan.getOutSchema(), child);
     this.qual = plan.getQual();
     stopWatch = new StopWatch(2);
+    this.plan = plan;
   }
-
-  String profileKey = getClass().getSimpleName() + ".next";
 
   @Override
   public Tuple next() throws IOException {
@@ -60,7 +60,9 @@ public class SelectionExec extends UnaryPhysicalExec  {
   }
 
   @Override
-  public void close() {
-    closeProfile();
+  public void close() throws IOException {
+    int pid = plan.getPID();
+    super.close();
+    closeProfile(pid);
   }
 }

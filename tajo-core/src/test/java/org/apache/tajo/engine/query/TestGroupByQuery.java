@@ -65,7 +65,7 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   public static Collection<Object[]> generateParameters() {
     return Arrays.asList(new Object[][]{
         {"single"},
-        {"multi"}
+//        {"multi"}
     });
   }
 

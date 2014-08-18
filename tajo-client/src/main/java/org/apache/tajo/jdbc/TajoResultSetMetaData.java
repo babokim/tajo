@@ -157,7 +157,8 @@ public class TajoResultSetMetaData implements ResultSetMetaData {
 
   @Override
   public boolean isSigned(int column) throws SQLException {
-    throw new SQLFeatureNotSupportedException("isSigned not supported");
+    //throw new SQLFeatureNotSupportedException("isSigned not supported");
+    return true;
   }
 
   @Override

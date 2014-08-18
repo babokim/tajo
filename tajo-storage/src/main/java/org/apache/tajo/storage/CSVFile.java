@@ -372,8 +372,6 @@ public class CSVFile {
       stopWatch = new StopWatch(3);
       if (profileContext == null) {
         profileContext = new DummyProfileContext(false);
-      } else {
-        LOG.info(">>>>>>>>>>>>>ProfileContext: " + profileContext.getId());
       }
       page();
     }

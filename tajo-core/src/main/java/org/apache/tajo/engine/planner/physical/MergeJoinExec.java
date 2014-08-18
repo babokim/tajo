@@ -96,11 +96,13 @@ public class MergeJoinExec extends BinaryPhysicalExec {
   }
 
   public Tuple next() throws IOException {
+    stopWatch.reset(0);
     Tuple previous;
 
     for (;;) {
       if (!outerIterator.hasNext() && !innerIterator.hasNext()) {
-        if(end){
+        if(end) {
+          nanoTimeNext += stopWatch.checkNano(0);
           return null;
         }
 
@@ -122,6 +124,7 @@ public class MergeJoinExec extends BinaryPhysicalExec {
             outerTuple = leftChild.next();
           }
           if (innerTuple == null || outerTuple == null) {
+            nanoTimeNext += stopWatch.checkNano(0);
             return null;
           }
         }
@@ -163,6 +166,7 @@ public class MergeJoinExec extends BinaryPhysicalExec {
 
       if (joinQual.eval(inSchema, frameTuple).isTrue()) {
         projector.eval(frameTuple, outTuple);
+        nanoTimeNext += stopWatch.checkNano(0);
         return outTuple;
       }
     }
@@ -179,8 +183,9 @@ public class MergeJoinExec extends BinaryPhysicalExec {
 
   @Override
   public void close() throws IOException {
+    int pid = joinNode.getPID();
     super.close();
-
+    closeProfile(pid);
     outerTupleSlots.clear();
     innerTupleSlots.clear();
     outerTupleSlots = null;

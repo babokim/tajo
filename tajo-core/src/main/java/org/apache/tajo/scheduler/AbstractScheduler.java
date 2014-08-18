@@ -139,7 +139,7 @@ public abstract class AbstractScheduler implements Scheduler {
 
         synchronized (queryProcessor) {
           try {
-            queryProcessor.wait(100);
+            queryProcessor.wait(200);
           } catch (InterruptedException e) {
             if (stopped.get()) {
               break;

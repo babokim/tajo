@@ -88,21 +88,21 @@ public abstract class PhysicalExec implements SchemaObject {
 
   protected QueryProfileMetrics profileMetrics;
 
-  protected void putProfileMetrics(String metricsName, long value) {
+  protected void putProfileMetrics(int id, String metricsName, long value) {
     if (context.isEnabledProfile()) {
       if (profileMetrics == null) {
-        profileMetrics = new QueryProfileMetrics(getClass().getSimpleName());
+        profileMetrics = new QueryProfileMetrics(getClass().getSimpleName() + "_" + id);
       }
       profileMetrics.addValue(metricsName, value);
     }
   }
 
-  protected void closeProfile() {
+  protected void closeProfile(int id) {
     if (context.isEnabledProfile()) {
-      putProfileMetrics(getClass().getSimpleName() + ".init.nanoTime", nanoTimeInit);
-      putProfileMetrics(getClass().getSimpleName() + ".next.nanoTime", nanoTimeNext);
-      putProfileMetrics(getClass().getSimpleName() + ".inTuples", numInTuple);
-      putProfileMetrics(getClass().getSimpleName() + ".outTuples", numOutTuple);
+      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".init.nanoTime", nanoTimeInit);
+      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".next.nanoTime", nanoTimeNext);
+      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".inTuples", numInTuple);
+      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".outTuples", numOutTuple);
 
       if (context.getTaskId() != null) {
         QueryProfiler.addProfileMetrics(context.getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);

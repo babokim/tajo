@@ -66,8 +66,9 @@ public class Fetcher {
   private Timer timer;
 
   private ClientBootstrap bootstrap;
+  private TaskAttemptContext context;
 
-  public Fetcher(TajoConf conf, URI uri, File file, ClientSocketChannelFactory factory) {
+  public Fetcher(TaskAttemptContext context, TajoConf conf, URI uri, File file, ClientSocketChannelFactory factory) {
     this.uri = uri;
     this.file = file;
     this.state = TajoProtos.FetcherState.FETCH_INIT;
@@ -91,6 +92,8 @@ public class Fetcher {
 
     ChannelPipelineFactory pipelineFactory = new HttpClientPipelineFactory(file);
     bootstrap.setPipelineFactory(pipelineFactory);
+
+    this.context = context;
   }
 
   public long getStartTime() {
@@ -164,6 +167,8 @@ public class Fetcher {
     }
   }
 
+  long writeNanoTime;
+
   public URI getURI() {
     return this.uri;
   }
@@ -221,6 +226,7 @@ public class Fetcher {
             return;
           }
 
+          long startTime = System.nanoTime();
           this.raf = new RandomAccessFile(file, "rw");
           this.fc = raf.getChannel();
 
@@ -232,6 +238,7 @@ public class Fetcher {
               fc.write(content.toByteBuffer());
             }
           }
+          writeNanoTime += System.nanoTime() - startTime;
         } else {
           HttpChunk chunk = (HttpChunk) e.getMessage();
           if (chunk.isLast()) {
@@ -245,9 +252,11 @@ public class Fetcher {
                   + "(received/total: " + fileLength + "/" + length + ")");
             }
           } else {
+            long startTime = System.nanoTime();
             if(fc != null){
               fc.write(chunk.getContent().toByteBuffer());
             }
+            writeNanoTime += System.nanoTime() - startTime;
           }
         }
       } finally {
@@ -259,6 +268,11 @@ public class Fetcher {
           IOUtils.cleanup(LOG, fc, raf);
           finishTime = System.currentTimeMillis();
           state = TajoProtos.FetcherState.FETCH_FINISHED;
+        }
+
+        if (context != null) {
+          context.addWriteNanoTime(writeNanoTime);
+          writeNanoTime = 0;
         }
       }
     }

@@ -121,7 +121,7 @@ public class ExternalSortExec extends SortExec {
     localDirAllocator = new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
     localFS = new RawLocalFileSystem();
 
-    stopWatch = new StopWatch(6);
+    stopWatch = new StopWatch(10);
   }
 
   public ExternalSortExec(final TaskAttemptContext context,
@@ -205,14 +205,13 @@ public class ExternalSortExec extends SortExec {
 
     int chunkId = 0;
     long runStartTime = System.currentTimeMillis();
-    String profileKeyScan = getClass().getSimpleName() + ".sortScan";
     while (true) { // partition sort start
-      stopWatch.reset(4);   //sortScan
+      stopWatch.reset(4);   //nanoTimeChildScan
       tuple = child.next();
       if (tuple == null) {
         break;
       }
-      nanoTimeSortScan += stopWatch.checkNano(4); //sortScan
+      nanoTimeChildScan += stopWatch.checkNano(4); //nanoTimeChildScan
       Tuple vtuple = new VTuple(tuple);
       inMemoryTable.add(vtuple);
       memoryConsumption += MemoryUtil.calculateMemorySize(vtuple);
@@ -274,6 +273,7 @@ public class ExternalSortExec extends SortExec {
     return localDirAllocator.getLocalPathForWrite(sortTmpDir + "/" + level +"_" + chunkId, context.getConf());
   }
 
+  long nanoTimeChildScan;
   long nanoTimeSortScan;
   long nanoTimeSortWrite;
   long nanoTimeMemorySort;
@@ -474,11 +474,13 @@ public class ExternalSortExec extends SortExec {
       final Scanner merger = createKWayMerger(inputFiles, startIdx, mergeFanout);
       merger.init();
       Tuple mergeTuple;
+      stopWatch.reset(3);
       while((mergeTuple = merger.next()) != null) {
         output.addTuple(mergeTuple);
       }
       merger.close();
       output.close();
+      nanoTimeSortWrite += stopWatch.checkNano(3); //sortWrite/
       long mergeEndTime = System.currentTimeMillis();
       info(LOG, outputPath.getName() + " is written to a disk. ("
           + FileUtil.humanReadableByteCount(output.getOffset(), false)
@@ -653,6 +655,7 @@ public class ExternalSortExec extends SortExec {
     }
 
     public Tuple next() throws IOException {
+      stopWatch.reset(6);
       Tuple outTuple;
       if (leftTuple != null && rightTuple != null) {
         if (comparator.compare(leftTuple, rightTuple) < 0) {
@@ -662,6 +665,7 @@ public class ExternalSortExec extends SortExec {
           outTuple = rightTuple;
           rightTuple = rightScan.next();
         }
+        nanoTimeSortScan += stopWatch.checkNano(6);
         return outTuple;
       }
 
@@ -672,6 +676,7 @@ public class ExternalSortExec extends SortExec {
         outTuple = leftTuple;
         leftTuple = leftScan.next();
       }
+      nanoTimeSortScan += stopWatch.checkNano(6);
       return outTuple;
     }
 
@@ -784,15 +789,18 @@ public class ExternalSortExec extends SortExec {
       executorService = null;
     }
 
-    putProfileMetrics(getClass().getSimpleName() + ".SortScan.nanoTime", nanoTimeSortScan);
-    putProfileMetrics(getClass().getSimpleName() + ".SortWrite.nanoTime", nanoTimeSortWrite);
-    putProfileMetrics(getClass().getSimpleName() + ".MemorySort.nanoTime", nanoTimeMemorySort);
-    putProfileMetrics(getClass().getSimpleName() + ".Sort.nanoTime", nanoTimeSort);
-    putProfileMetrics(getClass().getSimpleName() + ".numNextMemory", numNextMemory);
-
-    closeProfile();
+    int pid = plan.getPID();
     plan = null;
     super.close();
+
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".ChildScan.nanoTime", nanoTimeChildScan);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortScan.nanoTime", nanoTimeSortScan);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortWrite.nanoTime", nanoTimeSortWrite);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".MemorySort.nanoTime", nanoTimeMemorySort);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".Sort.nanoTime", nanoTimeSort);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".numNextMemory", numNextMemory);
+
+    closeProfile(pid);
   }
 
   @Override

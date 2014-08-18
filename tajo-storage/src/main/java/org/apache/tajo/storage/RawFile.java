@@ -110,8 +110,6 @@ public class RawFile {
       stopWatch = new StopWatch(4);
       if (profileContext == null) {
         profileContext = new DummyProfileContext(false);
-      } else {
-        LOG.info(">>>>>>>>>>>>>ProfileContext: " + profileContext.getId());
       }
 
       // initial read

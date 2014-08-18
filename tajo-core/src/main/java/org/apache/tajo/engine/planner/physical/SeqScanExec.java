@@ -75,6 +75,7 @@ public class SeqScanExec extends PhysicalExec {
     super(context, plan.getInSchema(), plan.getOutSchema());
 
     this.plan = plan;
+    pid = plan.getPID();
     this.qual = plan.getQual();
     this.fragments = fragments;
 
@@ -93,10 +94,10 @@ public class SeqScanExec extends PhysicalExec {
     }
 
     if (this.qual != null) {
-      evalNodeKey = this.getClass().getSimpleName() + "." + this.qual.getClass().getSimpleName();
+      evalNodeKey = this.getClass().getSimpleName() + "_" + plan.getPID() + "." + this.qual.getClass().getSimpleName();
     }
 
-    projectorEvalNodeKey = this.getClass().getSimpleName() + ".project";
+    projectorEvalNodeKey = this.getClass().getSimpleName() + "_" + plan.getPID() + ".project";
 
     stopWatch = new StopWatch(4);
   }
@@ -315,6 +316,8 @@ public class SeqScanExec extends PhysicalExec {
     scanner.reset();
   }
 
+  int pid;
+
   @Override
   public void close() throws IOException {
     IOUtils.cleanup(null, scanner);
@@ -329,12 +332,12 @@ public class SeqScanExec extends PhysicalExec {
       }
     }
     if (evalNodeKey != null) {
-      putProfileMetrics(evalNodeKey + ".nanoTime", nanoTimeEval);
+      putProfileMetrics(pid, evalNodeKey + ".nanoTime", nanoTimeEval);
     }
 
-    putProfileMetrics(projectorEvalNodeKey + ".nanoTime", nanoTimeProject);
+    putProfileMetrics(pid, projectorEvalNodeKey + ".nanoTime", nanoTimeProject);
 
-    closeProfile();
+    closeProfile(pid);
     scanner = null;
     plan = null;
     qual = null;

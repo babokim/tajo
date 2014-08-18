@@ -290,17 +290,33 @@ public class TajoDatabaseMetaData implements DatabaseMetaData {
     throw new SQLFeatureNotSupportedException("dataDefinitionIgnoredInTransactions not supported");
   }
 
+
   @Override
   public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern)
       throws SQLException {
-    throw new SQLFeatureNotSupportedException("stored procedures not supported");
+    return new TajoMetaDataResultSet(Arrays.asList("PROCEDURE_CAT", "PROCEDURE_SCHEM",
+        "PROCEDURE_NAME", "NUM_INPUT_PARAMS", "NUM_OUTPUT_PARAMS", "NUM_RESULT_SETS", "REMARKS", "PROCEDURE_TYPE"),
+        Arrays.asList(Type.VARCHAR, Type.VARCHAR, Type.VARCHAR, Type.INT4, Type.INT4, Type.INT4, Type.VARCHAR, Type.INT2),
+        new ArrayList<MetaDataTuple>());
   }
 
   @Override
   public ResultSet getProcedureColumns(String catalog, String schemaPattern, String procedureNamePattern,
                                        String columnNamePattern)
       throws SQLException {
-    throw new SQLFeatureNotSupportedException("stored procedures not supported");
+    return new TajoMetaDataResultSet(Arrays.asList(
+        "PROCEDURE_CAT", "PROCEDURE_SCHEM", "PROCEDURE_NAME", "COLUMN_NAME", "COLUMN_TYPE",
+        "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+        "RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
+        "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE", "SS_TYPE_CATALOG_NAME",
+        "SS_TYPE_SCHEMA_NAME", "SS_UDT_CATALOG_NAME", "SS_UDT_SCHEMA_NAME", "SS_UDT_ASSEMBLY_TYPE_NAME", "SS_XML_SCHEMACOLLECTION_CATALOG_NAME",
+        "SS_XML_SCHEMACOLLECTION_SCHEMA_NAME", "SS_XML_SCHEMACOLLECTION_NAME", "SS_DATA_TYPE"),
+        Arrays.asList(
+            Type.VARCHAR, Type.VARCHAR, Type.VARCHAR,Type.VARCHAR, Type.INT2,
+            Type.INT2, Type.VARCHAR, Type.INT4, Type.INT4, Type.INT2,
+            Type.INT2, Type.INT2, Type.VARCHAR, Type.VARCHAR, Type.INT2,
+            Type.INT2, Type.INT2,Type.INT1),
+        new ArrayList<MetaDataTuple>());
   }
 
   /**
@@ -620,7 +636,13 @@ public class TajoDatabaseMetaData implements DatabaseMetaData {
   @Override
   public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate)
       throws SQLException {
-    throw new SQLFeatureNotSupportedException("indexes not supported");
+    return new TajoMetaDataResultSet(Arrays.asList(
+        "TABLE_CAT", "TABLE_SCHEM", "TABLE_NAME", "NON_UNIQUE", "INDEX_QUALIFIER",
+        "INDEX_NAME", "TYPE", "ORDINAL_POSITION", "COLUMN_NAME", "ASC_OR_DESC",
+        "CARDINALITY", "PAGES", "FILTER_CONDITION"),
+        Arrays.asList(Type.VARCHAR, Type.VARCHAR, Type.VARCHAR, Type.BOOLEAN, Type.VARCHAR, Type.VARCHAR,
+            Type.INT2, Type.INT2, Type.VARCHAR, Type.VARCHAR, Type.INT4, Type.INT4, Type.VARCHAR),
+        new ArrayList<MetaDataTuple>());
   }
 
   @Override
@@ -732,13 +754,31 @@ public class TajoDatabaseMetaData implements DatabaseMetaData {
 
   @Override
   public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern) throws SQLException {
-    throw new SQLFeatureNotSupportedException("getFunctions not supported");
+    return new TajoMetaDataResultSet(
+        Arrays.asList("FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME",
+            "NUM_INPUT_PARAMS", "NUM_OUTPUT_PARAMS", "NUM_RESULT_SETS",
+            "REMARKS", "FUNCTION_TYPE"),
+        Arrays.asList(Type.VARCHAR, Type.VARCHAR, Type.VARCHAR, Type.INT4, Type.INT4, Type.INT4,
+            Type.VARCHAR, Type.INT2),
+        new ArrayList<MetaDataTuple>());
   }
 
   @Override
   public ResultSet getFunctionColumns(String catalog, String schemaPattern, String functionNamePattern,
                                       String columnNamePattern) throws SQLException {
-    throw new SQLFeatureNotSupportedException("getFunctionColumns not supported");
+    return new TajoMetaDataResultSet(Arrays.asList(
+        "FUNCTION_CAT", "FUNCTION_SCHEM", "FUNCTION_NAME", "COLUMN_NAME", "COLUMN_TYPE",
+        "DATA_TYPE", "TYPE_NAME", "PRECISION", "LENGTH", "SCALE",
+        "RADIX", "NULLABLE", "REMARKS", "COLUMN_DEF", "SQL_DATA_TYPE",
+        "SQL_DATETIME_SUB", "CHAR_OCTET_LENGTH", "ORDINAL_POSITION", "IS_NULLABLE", "SS_TYPE_CATALOG_NAME",
+        "SS_TYPE_SCHEMA_NAME", "SS_UDT_CATALOG_NAME", "SS_UDT_SCHEMA_NAME", "SS_UDT_ASSEMBLY_TYPE_NAME", "SS_XML_SCHEMACOLLECTION_CATALOG_NAME",
+        "SS_XML_SCHEMACOLLECTION_SCHEMA_NAME", "SS_XML_SCHEMACOLLECTION_NAME", "SS_DATA_TYPE"),
+        Arrays.asList(
+            Type.VARCHAR, Type.VARCHAR, Type.VARCHAR,Type.VARCHAR, Type.INT2,
+            Type.INT2, Type.VARCHAR, Type.INT4, Type.INT4, Type.INT2,
+            Type.INT2, Type.INT2, Type.VARCHAR, Type.VARCHAR, Type.INT2,
+            Type.INT2, Type.INT2,Type.INT1),
+        new ArrayList<MetaDataTuple>());
   }
 
   @Override

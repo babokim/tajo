@@ -220,7 +220,7 @@ public class FairScheduler extends AbstractScheduler {
               queries.add(querySchedulingInfo);
               runningQueries.put(querySchedulingInfo.getQueryId(), querySchedulingInfo);
             } else {
-              LOG.warn("No queue for " + eachQueueName);
+              //LOG.warn("No queue for " + eachQueueName);
               continue;
             }
           }

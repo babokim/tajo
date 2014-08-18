@@ -145,6 +145,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
   }
 
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
 
     if(appender != null){
@@ -161,7 +162,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
         context.addShuffleFileOutput(0, context.getTaskId().toString());
       }
     }
-    closeProfile();
+    closeProfile(pid);
     appender = null;
     plan = null;
   }

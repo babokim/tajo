@@ -209,16 +209,17 @@ public class HashJoinExec extends BinaryPhysicalExec {
 
   @Override
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     if (tupleSlots != null) {
       tupleSlots.clear();
       tupleSlots = null;
     }
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLoadRightNext", nanoTimeLoadRightNext);
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLoadRight", nanoTimeLoadRight);
-    putProfileMetrics(getClass().getSimpleName() + ".nanoTimeLeftNext", nanoTimeLeftNext);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLoadRightNext", nanoTimeLoadRightNext);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLoadRight", nanoTimeLoadRight);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLeftNext", nanoTimeLeftNext);
 
-    closeProfile();
+    closeProfile(pid);
     iterator = null;
     plan = null;
     joinQual = null;

@@ -46,6 +46,7 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 
@@ -83,6 +84,8 @@ public class TaskAttemptContext extends ProfileContext {
   /** a output volume for each partition */
   private Map<Integer, Long> partitionOutputVolume;
   private HashShuffleAppenderManager hashShuffleAppenderManager;
+
+  private AtomicLong fetchWriteNanoTime = new AtomicLong(0);
 
   public TaskAttemptContext(final TajoConf conf,
                             final QueryContext queryContext,
@@ -398,5 +401,13 @@ public class TaskAttemptContext extends ProfileContext {
       }
       QueryProfiler.addProfileMetrics(getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);
     }
+  }
+
+  public long getFetchWriteNanoTime() {
+    return fetchWriteNanoTime.get();
+  }
+
+  public void addWriteNanoTime(long fetchWriteNanoTime) {
+    this.fetchWriteNanoTime.addAndGet(fetchWriteNanoTime);
   }
 }
