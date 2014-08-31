@@ -33,9 +33,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * This is the hash-based aggregation operator for count distinct second stage
- */
 public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
   private DistinctGroupbyNode plan;
   private PhysicalExec child;
@@ -60,34 +57,8 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
     this.child.init();
 
     numGroupingColumns = plan.getGroupingColumns().length;
-//    Set<Column> groupingColumnSet = new HashSet<Column>();
-//    for (Column eachColumn: plan.getGroupingColumns()) {
-//      groupingColumnSet.add(eachColumn);
-//    }
 
     List<GroupbyNode> groupbyNodes = plan.getGroupByNodes();
-
-//    int keyIndex = 1 + numGroupingColumns;
-//    List<int[]> keyIndexes = new ArrayList<int[]>();
-//    for (GroupbyNode eachGroupby : groupbyNodes) {
-//      if (eachGroupby.isDistinct()) {
-//        int[] eachDistinctKeyIndexes = new int[eachGroupby.getGroupingColumns().length];
-//
-//        for (int i = 0; i < eachDistinctKeyIndexes.length; i++) {
-//          eachDistinctKeyIndexes[i] = (i + keyIndex);
-//        }
-//        keyIndexes.add(eachDistinctKeyIndexes);
-//        keyIndex += eachDistinctKeyIndexes.length;
-//      } else {
-//        nonDistinctAggrFunctions = eachGroupby.getAggFunctions();
-//        if (nonDistinctAggrFunctions != null) {
-//          for (AggregationFunctionCallEval eachFunction: nonDistinctAggrFunctions) {
-//            eachFunction.setIntermediatePhase();
-//          }
-//          nonDistinctAggrContexts = new FunctionContext[nonDistinctAggrFunctions.length];
-//        }
-//      }
-//    }
 
     // Finding distinct group by column index.
     Set<Integer> groupingKeyIndexSet = new HashSet<Integer>();
@@ -259,6 +230,9 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
   @Override
   public void rescan() throws IOException {
     super.rescan();
+    prevKeyTuple = null;
+    prevTuple = null;
+    finished = false;
   }
 
   @Override

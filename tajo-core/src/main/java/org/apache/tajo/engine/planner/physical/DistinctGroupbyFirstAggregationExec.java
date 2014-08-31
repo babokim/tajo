@@ -177,6 +177,7 @@ public class DistinctGroupbyFirstAggregationExec extends PhysicalExec {
   @Override
   public void rescan() {
     finished = false;
+    currentAggregatorIndex = 0;
     for (int i = 0; i < distinctAggregators.length; i++) {
       distinctAggregators[i].rescan();
     }

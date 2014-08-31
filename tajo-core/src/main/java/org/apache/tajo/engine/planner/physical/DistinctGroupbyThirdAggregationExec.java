@@ -217,6 +217,9 @@ public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
   @Override
   public void rescan() throws IOException {
     super.rescan();
+    prevKeyTuple = null;
+    prevTuple = null;
+    finished = false;
   }
 
   @Override

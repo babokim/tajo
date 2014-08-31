@@ -371,6 +371,10 @@ public class TestGroupByQuery extends QueryTestCaseBase {
     assertResultSet(res, "testDistinctAggregation_case9.result");
     res.close();
 
+    res = executeFile("testDistinctAggregation_case10.sql");
+    assertResultSet(res, "testDistinctAggregation_case10.result");
+    res.close();
+
     // case9
     KeyValueSet tableOptions = new KeyValueSet();
     tableOptions.set(StorageConstants.CSVFILE_DELIMITER, StorageConstants.DEFAULT_FIELD_DELIMITER);
