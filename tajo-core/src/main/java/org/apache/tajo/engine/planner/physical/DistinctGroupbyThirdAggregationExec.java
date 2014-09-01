@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.datum.NullDatum;
 import org.apache.tajo.engine.eval.AggregationFunctionCallEval;
@@ -32,10 +34,8 @@ import org.apache.tajo.worker.TaskAttemptContext;
 import java.io.IOException;
 import java.util.*;
 
-/**
- * This is the hash-based aggregation operator for count distinct second stage
- */
 public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
+  private static Log LOG = LogFactory.getLog(DistinctGroupbyThirdAggregationExec.class);
   private DistinctGroupbyNode plan;
   private PhysicalExec child;
 
@@ -190,9 +190,12 @@ public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
         aggregators[distinctSeq].merge(tuple);
         break;
       } else {
+        prevKeyTuple = keyTuple;
+        prevTuple = tuple;
         aggregators[distinctSeq].merge(tuple);
       }
     }
+
     return resultTuple;
   }
 

@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.engine.eval.AggregationFunctionCallEval;
 import org.apache.tajo.engine.function.FunctionContext;
@@ -34,6 +36,7 @@ import java.util.List;
 import java.util.Set;
 
 public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
+  private static Log LOG = LogFactory.getLog(DistinctGroupbySecondAggregationExec.class);
   private DistinctGroupbyNode plan;
   private PhysicalExec child;
 
@@ -120,6 +123,7 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
 
   Tuple prevKeyTuple = null;
   Tuple prevTuple = null;
+  int prevSeq = -1;
 
   @Override
   public Tuple next() throws IOException {
@@ -137,8 +141,7 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
           // Empty case
           return null;
         }
-        int distinctSeq = prevTuple.get(0).asInt2();
-        if (distinctSeq == 0) {
+        if (prevSeq == 0 && nonDistinctAggrFunctions != null) {
           terminatedNonDistinctAggr(prevTuple);
         }
         result = prevTuple;
@@ -149,24 +152,27 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
       Tuple keyTuple = getKeyTuple(distinctSeq, tuple);
 
       if (prevKeyTuple == null) {
+        // First
         if (distinctSeq == 0 && nonDistinctAggrFunctions != null) {
           initNonDistinctAggrContext();
           mergeNonDistinctAggr(tuple);
         }
         prevKeyTuple = keyTuple;
         prevTuple = tuple;
-
+        prevSeq = distinctSeq;
         continue;
       }
 
       if (!prevKeyTuple.equals(keyTuple)) {
         // new grouping key
-        if (distinctSeq == 0) {
+        if (prevSeq == 0 && nonDistinctAggrFunctions != null) {
           terminatedNonDistinctAggr(prevTuple);
         }
         result = prevTuple;
+
         prevKeyTuple = keyTuple;
         prevTuple = tuple;
+        prevSeq = distinctSeq;
 
         if (distinctSeq == 0 && nonDistinctAggrFunctions != null) {
           initNonDistinctAggrContext();
@@ -174,11 +180,15 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
         }
         break;
       } else {
-        if (distinctSeq == 0) {
+        prevKeyTuple = keyTuple;
+        prevTuple = tuple;
+        prevSeq = distinctSeq;
+        if (distinctSeq == 0 && nonDistinctAggrFunctions != null) {
           mergeNonDistinctAggr(tuple);
         }
       }
     }
+
     return result;
   }
 
@@ -202,9 +212,6 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
 
   private void terminatedNonDistinctAggr(Tuple tuple) {
     if (nonDistinctAggrFunctions == null) {
-      return;
-    }
-    if (tuple.get(nonDistinctAggrTupleStartIndex).isNull()) {
       return;
     }
     for (int i = 0; i < nonDistinctAggrFunctions.length; i++) {

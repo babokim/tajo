@@ -101,6 +101,7 @@ public class DistinctGroupbyFirstAggregationExec extends PhysicalExec {
   }
 
   private int currentAggregatorIndex = 0;
+
   @Override
   public Tuple next() throws IOException {
     if (!preparedData) {
