@@ -76,7 +76,7 @@ public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
         distinctSeq++;
 
         Column[] distinctGroupingColumns = eachGroupby.getGroupingColumns();
-        inTupleIndex += distinctGroupingColumns.length - numGroupingColumns;
+        inTupleIndex += distinctGroupingColumns.length;
         outTupleIndex += eachGroupby.getAggFunctions().length;
       } else {
         nonDistinctAggr = new DistinctFinalAggregator(-1, inTupleIndex, outTupleIndex, eachGroupby);
@@ -139,9 +139,9 @@ public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
     Tuple resultTuple = new VTuple(resultTupleLength);
 
     while (!context.isStopped()) {
-      Tuple tuple = child.next();
+      Tuple childTuple = child.next();
       // Last tuple
-      if (tuple == null) {
+      if (childTuple == null) {
         finished = true;
 
         if (prevTuple == null) {
@@ -161,6 +161,13 @@ public class DistinctGroupbyThirdAggregationExec extends UnaryPhysicalExec {
           eachAggr.terminate(resultTuple);
         }
         break;
+      }
+
+      Tuple tuple = null;
+      try {
+        tuple = childTuple.clone();
+      } catch (CloneNotSupportedException e) {
+        throw new IOException(e.getMessage(), e);
       }
 
       int distinctSeq = tuple.get(0).asInt2();

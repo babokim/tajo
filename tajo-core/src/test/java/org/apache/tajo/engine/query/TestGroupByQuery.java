@@ -309,6 +309,24 @@ public class TestGroupByQuery extends QueryTestCaseBase {
   }
 
   @Test
+  public final void testDistinctAggregation8() throws Exception {
+    /*
+    select
+    sum(distinct l_orderkey),
+        l_linenumber, l_returnflag, l_linestatus, l_shipdate,
+        count(distinct l_partkey),
+        sum(l_orderkey)
+    from
+        lineitem
+    group by
+    l_linenumber, l_returnflag, l_linestatus, l_shipdate;
+    */
+    ResultSet res = executeQuery();
+    assertResultSet(res);
+    cleanupQuery(res);
+  }
+
+  @Test
   public final void testDistinctAggregationWithHaving1() throws Exception {
     // select l_linenumber, count(*), count(distinct l_orderkey), sum(distinct l_orderkey) from lineitem
     // group by l_linenumber having sum(distinct l_orderkey) >= 6;

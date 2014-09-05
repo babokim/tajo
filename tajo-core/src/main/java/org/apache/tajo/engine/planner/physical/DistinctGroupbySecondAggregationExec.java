@@ -133,8 +133,8 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
 
     Tuple result = null;
     while (!context.isStopped()) {
-      Tuple tuple = child.next();
-      if (tuple == null) {
+      Tuple childTuple = child.next();
+      if (childTuple == null) {
         finished = true;
 
         if (prevTuple == null) {
@@ -146,6 +146,13 @@ public class DistinctGroupbySecondAggregationExec extends UnaryPhysicalExec {
         }
         result = prevTuple;
         break;
+      }
+
+      Tuple tuple = null;
+      try {
+        tuple = childTuple.clone();
+      } catch (CloneNotSupportedException e) {
+        throw new IOException(e.getMessage(), e);
       }
 
       int distinctSeq = tuple.get(0).asInt2();
