@@ -1207,7 +1207,7 @@ public class PhysicalPlannerImpl implements PhysicalPlanner {
 
   }
 
-  private EnforceProperty getAlgorithmEnforceProperty(Enforcer enforcer, LogicalNode node) {
+  public static EnforceProperty getAlgorithmEnforceProperty(Enforcer enforcer, LogicalNode node) {
     if (enforcer == null) {
       return null;
     }
