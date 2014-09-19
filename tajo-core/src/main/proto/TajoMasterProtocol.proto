@@ -96,8 +96,7 @@ enum ResourceRequestPriority {
     DISK = 2;
 }
 
-//WorkerResourceAllocationRequest
-message WorkerResourcesRequestProto {
+message WorkerResourceAllocationRequest {
     required QueryIdProto queryId = 1;
     required ResourceRequestPriority resourceRequestPriority = 2;
 
@@ -108,44 +107,48 @@ message WorkerResourcesRequestProto {
 
     required float maxDiskSlotPerContainer = 6;
     required float minDiskSlotPerContainer = 7;
-
-    repeated int32 workerId = 8;
-}
-
-message WorkerResourceReleaseProto {
-    required QueryIdProto queryId = 1;
-    repeated AllocatedWorkerResourceProto resources = 2;
 }
 
 message WorkerResourceProto {
-    required WorkerConnectionInfoProto connectionInfo = 1;
-    required int32 memoryMB = 2;
-    required float diskSlots = 3;
+    required string host = 1;
+    required int32 peerRpcPort = 2;
+    required int32 queryMasterPort = 3;
+    required int32 infoPort = 4;
+    required int32 memoryMB = 5 ;
+    required float diskSlots = 6;
 }
 
-//WorkerResourcesRequest
-message WorkerResourcesProto {
+message WorkerResourcesRequest {
     repeated WorkerResourceProto workerResources = 1;
 }
 
-//WorkerAllocatedResource
-message AllocatedWorkerResourceProto {
-    required WorkerResourceProto worker = 1;
-
-    required int32 allocatedMemoryMB = 2;
-    required float allocatedDiskSlots = 3;
+message WorkerResourceReleaseRequest {
+    required ExecutionBlockIdProto executionBlockId = 1;
+    repeated hadoop.yarn.ContainerIdProto containerIds = 2;
 }
 
-//will be removed
+message WorkerAllocatedResource {
+    required hadoop.yarn.ContainerIdProto containerId = 1;
+    required string nodeId = 2;
+    required string workerHost = 3;
+    required int32 peerRpcPort = 4;
+    required int32 queryMasterPort = 5;
+    required int32 clientPort = 6;
+    required int32 workerPullServerPort = 7;
+
+    required int32 allocatedMemoryMB = 8;
+    required float allocatedDiskSlots = 9;
+}
+
 message WorkerResourceAllocationResponse {
-    //required QueryIdProto queryId = 1;
-    repeated AllocatedWorkerResourceProto allocatedWorkerResource = 2;
+    required QueryIdProto queryId = 1;
+    repeated WorkerAllocatedResource workerAllocatedResource = 2;
 }
 
 service TajoMasterProtocolService {
   rpc heartbeat(TajoHeartbeat) returns (TajoHeartbeatResponse);
-  rpc allocateWorkerResources(WorkerResourcesRequestProto) returns (WorkerResourceAllocationResponse);
-  rpc releaseWorkerResource(WorkerResourceReleaseProto) returns (BoolProto);
+  rpc allocateWorkerResources(WorkerResourceAllocationRequest) returns (WorkerResourceAllocationResponse);
+  rpc releaseWorkerResource(WorkerResourceReleaseRequest) returns (BoolProto);
   rpc stopQueryMaster(QueryIdProto) returns (BoolProto);
-  rpc getAllWorkerResource(NullProto) returns (WorkerResourcesProto);
+  rpc getAllWorkerResource(NullProto) returns (WorkerResourcesRequest);
 }

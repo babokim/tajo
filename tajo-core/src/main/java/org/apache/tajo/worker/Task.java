@@ -50,10 +50,11 @@ import org.apache.tajo.ipc.TajoWorkerProtocol.*;
 import org.apache.tajo.ipc.TajoWorkerProtocol.EnforceProperty.EnforceType;
 import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.storage.BaseTupleComparator;
-import org.apache.tajo.storage.RawFile;
 import org.apache.tajo.storage.StorageUtil;
+import org.apache.tajo.storage.TupleComparator;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
+import org.jboss.netty.util.*;
 
 import java.io.File;
 import java.io.IOException;
@@ -95,9 +96,7 @@ public class Task {
   // TODO - to be refactored
   private ShuffleType shuffleType = null;
   private Schema finalSchema = null;
-
-  private BaseTupleComparator sortComp = null;
-  private ClientSocketChannelFactory channelFactory = null;
+  private TupleComparator sortComp = null;
 
   static final String OUTPUT_FILE_PREFIX="part-";
   static final ThreadLocal<NumberFormat> OUTPUT_FILE_FORMAT_SUBQUERY =
@@ -416,9 +415,7 @@ public class Task {
   }
 
   public void run() throws Exception {
-    long nanoTimeFetch = -1;
     startTime = System.currentTimeMillis();
-    long nanoTimeStart = System.nanoTime();
     Throwable error = null;
     try {
       context.setState(TaskAttemptState.TA_RUNNING);
@@ -426,9 +423,7 @@ public class Task {
       if (context.hasFetchPhase()) {
         // If the fetch is still in progress, the query unit must wait for
         // complete.
-        long startFetchTime = System.nanoTime();
         waitForFetch();
-        nanoTimeFetch = System.nanoTime() - startFetchTime;
         context.setFetcherProgress(FETCHER_PROGRESS);
         context.setProgressChanged(true);
         updateProgress();
@@ -445,9 +440,6 @@ public class Task {
       LOG.error(e.getMessage(), e);
       aborted = true;
     } finally {
-      context.addProfileMetrics("Task", new String[]{"fetch", "fetch.write", "total"},
-          new long[]{nanoTimeFetch, context.getFetchWriteNanoTime(), System.nanoTime() - nanoTimeStart});
-
       if (executor != null) {
         try {
           executor.close();
@@ -682,6 +674,7 @@ public class Task {
 
     if (fetches.size() > 0) {
       ClientSocketChannelFactory channelFactory = executionBlockContext.getShuffleChannelFactory();
+      org.jboss.netty.util.Timer timer = executionBlockContext.getRPCTimer();
       Path inputDir = executionBlockContext.getLocalDirAllocator().
           getLocalPathToRead(getTaskAttemptDir(ctx.getTaskId()).toString(), systemConf);
       File storeDir;
@@ -695,8 +688,8 @@ public class Task {
           if (!storeDir.exists()) {
             storeDir.mkdirs();
           }
-          storeFile = new File(storeDir, "in_" + i + "." + RawFile.FILE_EXTENSION);
-          Fetcher fetcher = new Fetcher(systemConf, uri, storeFile, channelFactory);
+          storeFile = new File(storeDir, "in_" + i);
+          Fetcher fetcher = new Fetcher(systemConf, uri, storeFile, channelFactory, timer);
           runnerList.add(fetcher);
           i++;
         }

@@ -482,8 +482,8 @@ public class QueryMaster extends CompositeService implements EventHandler {
     for (WorkerResourceProto workerResource: getAllWorker()) {
       NettyClientBase rpc = null;
       try {
-        rpc = connPool.getConnection(new InetSocketAddress(workerResource.getConnectionInfo().getHost(),
-                workerResource.getConnectionInfo().getPeerRpcPort()),
+        rpc = connPool.getConnection(new InetSocketAddress(workerResource.getHost(),
+                workerResource.getPeerRpcPort()),
             TajoWorkerProtocol.class, true);
         TajoWorkerProtocolService workerService = rpc.getStub();
 
