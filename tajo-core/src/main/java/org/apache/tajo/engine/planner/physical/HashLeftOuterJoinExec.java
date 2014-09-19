@@ -33,6 +33,7 @@ import org.apache.tajo.engine.utils.TupleUtil;
 import org.apache.tajo.storage.FrameTuple;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.storage.VTuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -117,6 +118,8 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
     leftKeyTuple = new VTuple(leftKeyList.length);
 
     rightNumCols = rightChild.getSchema().size();
+
+    stopWatch = new StopWatch(5);
   }
 
   @Override
@@ -130,7 +133,12 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
     }
   }
 
+  long nanoTimeLoadRightNext = 0;
+  long nanoTimeLoadRight = 0;
+  long nanoTimeLeftNext = 0;
+
   public Tuple next() throws IOException {
+    stopWatch.reset(0);
     if (first) {
       loadRightToHashTable();
     }
@@ -138,73 +146,87 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
     Tuple rightTuple;
     boolean found = false;
 
-    while(!finished) {
+    try {
+      while (!finished) {
 
-      if (shouldGetLeftTuple) { // initially, it is true.
-        // getting new outer
-        leftTuple = leftChild.next(); // it comes from a disk
-        if (leftTuple == null) { // if no more tuples in left tuples on disk, a join is completed.
-          finished = true;
-          return null;
+        if (shouldGetLeftTuple) { // initially, it is true.
+          // getting new outer
+          stopWatch.reset(4);
+          leftTuple = leftChild.next(); // it comes from a disk
+          nanoTimeLeftNext += stopWatch.checkNano(4);
+          if (leftTuple == null) { // if no more tuples in left tuples on disk, a join is completed.
+            finished = true;
+            return null;
+          }
+          numInTuple++;
+
+          // getting corresponding right
+          getKeyLeftTuple(leftTuple, leftKeyTuple); // get a left key tuple
+          List<Tuple> rightTuples = tupleSlots.get(leftKeyTuple);
+          if (rightTuples != null) { // found right tuples on in-memory hash table.
+            iterator = rightTuples.iterator();
+            shouldGetLeftTuple = false;
+          } else {
+            // this left tuple doesn't have a match on the right, and output a tuple with the nulls padded rightTuple
+            Tuple nullPaddedTuple = TupleUtil.createNullPaddedTuple(rightNumCols);
+            frameTuple.set(leftTuple, nullPaddedTuple);
+            projector.eval(frameTuple, outTuple);
+            // we simulate we found a match, which is exactly the null padded one
+            shouldGetLeftTuple = true;
+            return outTuple;
+          }
         }
 
-        // getting corresponding right
-        getKeyLeftTuple(leftTuple, leftKeyTuple); // get a left key tuple
-        List<Tuple> rightTuples = tupleSlots.get(leftKeyTuple);
-        if (rightTuples != null) { // found right tuples on in-memory hash table.
-          iterator = rightTuples.iterator();
-          shouldGetLeftTuple = false;
+        // getting a next right tuple on in-memory hash table.
+        rightTuple = iterator.next();
+        if (!iterator.hasNext()) { // no more right tuples for this hash key
+          shouldGetLeftTuple = true;
+        }
+
+        frameTuple.set(leftTuple, rightTuple); // evaluate a join condition on both tuples
+
+        // if there is no join filter, it is always true.
+        boolean satisfiedWithFilter = joinFilter == null ? true : joinFilter.eval(inSchema, frameTuple).isTrue();
+        boolean satisfiedWithJoinCondition = joinQual.eval(inSchema, frameTuple).isTrue();
+
+        // if a composited tuple satisfies with both join filter and join condition
+        if (satisfiedWithFilter && satisfiedWithJoinCondition) {
+          projector.eval(frameTuple, outTuple);
+          return outTuple;
         } else {
-          // this left tuple doesn't have a match on the right, and output a tuple with the nulls padded rightTuple
+
+          // if join filter is satisfied, the left outer join (LOJ) operator should return the null padded tuple
+          // only once. Then, LOJ operator should take the next left tuple.
+          if (!satisfiedWithFilter) {
+            shouldGetLeftTuple = true;
+          }
+
+          // null padding
           Tuple nullPaddedTuple = TupleUtil.createNullPaddedTuple(rightNumCols);
           frameTuple.set(leftTuple, nullPaddedTuple);
           projector.eval(frameTuple, outTuple);
-          // we simulate we found a match, which is exactly the null padded one
-          shouldGetLeftTuple = true;
           return outTuple;
         }
       }
 
-      // getting a next right tuple on in-memory hash table.
-      rightTuple = iterator.next();
-      if (!iterator.hasNext()) { // no more right tuples for this hash key
-        shouldGetLeftTuple = true;
-      }
-
-      frameTuple.set(leftTuple, rightTuple); // evaluate a join condition on both tuples
-
-      // if there is no join filter, it is always true.
-      boolean satisfiedWithFilter = joinFilter == null ? true : joinFilter.eval(inSchema, frameTuple).isTrue();
-      boolean satisfiedWithJoinCondition = joinQual.eval(inSchema, frameTuple).isTrue();
-
-      // if a composited tuple satisfies with both join filter and join condition
-      if (satisfiedWithFilter && satisfiedWithJoinCondition) {
-        projector.eval(frameTuple, outTuple);
-        return outTuple;
-      } else {
-
-        // if join filter is satisfied, the left outer join (LOJ) operator should return the null padded tuple
-        // only once. Then, LOJ operator should take the next left tuple.
-        if (!satisfiedWithFilter) {
-          shouldGetLeftTuple = true;
-        }
-
-        // null padding
-        Tuple nullPaddedTuple = TupleUtil.createNullPaddedTuple(rightNumCols);
-        frameTuple.set(leftTuple, nullPaddedTuple);
-        projector.eval(frameTuple, outTuple);
-        return outTuple;
-      }
+      return outTuple;
+    } finally {
+      numOutTuple++;
+      nanoTimeNext += stopWatch.checkNano(0);
     }
-
-    return outTuple;
   }
 
   protected void loadRightToHashTable() throws IOException {
     Tuple tuple;
     Tuple keyTuple;
 
-    while ((tuple = rightChild.next()) != null) {
+    stopWatch.reset(2); //loadRightToHashTable
+    while (true) {
+      stopWatch.reset(3);
+      tuple = rightChild.next();
+      if (tuple == null) {
+        break;
+      }
       keyTuple = new VTuple(joinKeyPairs.size());
       for (int i = 0; i < rightKeyList.length; i++) {
         keyTuple.put(i, tuple.get(rightKeyList[i]));
@@ -218,8 +240,11 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
         newValue.add(tuple);
         tupleSlots.put(keyTuple, newValue);
       }
+      nanoTimeLoadRightNext += stopWatch.checkNano(3);
+      numInTuple++;
     }
     first = false;
+    nanoTimeLoadRight += stopWatch.checkNano(2);
   }
 
   @Override
@@ -237,9 +262,17 @@ public class HashLeftOuterJoinExec extends BinaryPhysicalExec {
 
   @Override
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     tupleSlots.clear();
     tupleSlots = null;
+
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLoadRightNext", nanoTimeLoadRightNext);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLoadRight", nanoTimeLoadRight);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".nanoTimeLeftNext", nanoTimeLeftNext);
+
+    closeProfile(pid);
+
     iterator = null;
     plan = null;
     joinQual = null;

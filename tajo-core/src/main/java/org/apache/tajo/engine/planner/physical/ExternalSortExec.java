@@ -41,6 +41,7 @@ import org.apache.tajo.storage.rawfile.DirectRawFileScanner;
 import org.apache.tajo.storage.rawfile.DirectRawFileWriter;
 import org.apache.tajo.unit.StorageUnit;
 import org.apache.tajo.util.FileUtil;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.util.TUtil;
 import org.apache.tajo.worker.TaskAttemptContext;
 
@@ -119,6 +120,8 @@ public class ExternalSortExec extends SortExec {
     this.sortTmpDir = getExecutorTmpDir();
     localDirAllocator = new LocalDirAllocator(ConfVars.WORKER_TEMPORAL_DIR.varname);
     localFS = new RawLocalFileSystem();
+
+    stopWatch = new StopWatch(10);
   }
 
   public ExternalSortExec(final TaskAttemptContext context,
@@ -163,10 +166,13 @@ public class ExternalSortExec extends SortExec {
     int rowNum = sortBuffer.rows();
 
     long sortStart = System.currentTimeMillis();
+    stopWatch.reset(2);    //memorySort
     List<Tuple> tupleList = OffHeapRowBlockUtils.sort(sortBuffer, getComparator());
+    nanoTimeMemorySort += stopWatch.checkNano(2);
     long sortEnd = System.currentTimeMillis();
 
     long chunkWriteStart = System.currentTimeMillis();
+    stopWatch.reset(3);   //sortWrite
     Path outputPath = getChunkPathForWrite(0, chunkId);
     final DirectRawFileWriter appender = new DirectRawFileWriter(context.getConf(), inSchema, meta, outputPath);
     appender.init();
@@ -174,7 +180,7 @@ public class ExternalSortExec extends SortExec {
       appender.addTuple(t);
     }
     appender.close();
-
+    nanoTimeSortWrite += stopWatch.checkNano(3); //sortWrite/
     long chunkWriteEnd = System.currentTimeMillis();
     info(LOG, "Chunk #" + chunkId + " sort and written (" +
         FileUtil.humanReadableByteCount(appender.getOffset(), false) + " bytes, " + rowNum + " rows, " +
@@ -195,7 +201,13 @@ public class ExternalSortExec extends SortExec {
 
     int chunkId = 0;
     long runStartTime = System.currentTimeMillis();
-    while ((tuple = child.next()) != null) { // partition sort start
+    while (true) { // partition sort start
+      stopWatch.reset(4);   //nanoTimeChildScan
+      tuple = child.next();
+      nanoTimeChildScan += stopWatch.checkNano(4); //nanoTimeChildScan
+      if (tuple == null) {
+        break;
+      }
       RowStoreUtil.convert(tuple, tupleBlock.getWriter());
 
       if (tupleBlock.usedMem() > sortBufferBytesNum) {
@@ -250,46 +262,64 @@ public class ExternalSortExec extends SortExec {
 
   }
 
+  long nanoTimeChildScan;
+  long nanoTimeSortScan;
+  long nanoTimeSortWrite;
+  long nanoTimeMemorySort;
+  long numNextMemory;
+  long nanoTimeSort;
+
   @Override
   public Tuple next() throws IOException {
-
-    if (!sorted) { // if not sorted, first sort all data
-
-      // if input files are given, it starts merging directly.
-      if (mergedInputPaths != null) {
-        try {
-          this.result = externalMergeAndSort(mergedInputPaths);
-        } catch (Exception e) {
-          throw new PhysicalPlanningException(e);
-        }
-      } else {
-        // Try to sort all data, and store them as multiple chunks if memory exceeds
-        long startTimeOfChunkSplit = System.currentTimeMillis();
-        List<Path> chunks = sortAndStoreAllChunks();
-        long endTimeOfChunkSplit = System.currentTimeMillis();
-        info(LOG, "Sort of all chunks is completed (" + (endTimeOfChunkSplit - startTimeOfChunkSplit) + " msec).");
-
-        if (memoryResident) { // if all sorted data reside in a main-memory table.
-          this.result = new MemTableScanner(sortedTuples, bytesOfLatestChunk);
-        } else { // if input data exceeds main-memory at least once
-
+    stopWatch.reset(0);
+    try {
+      if (!sorted) { // if not sorted, first sort all data
+        stopWatch.reset(5);
+        // if input files are given, it starts merging directly.
+        if (mergedInputPaths != null) {
           try {
-            this.result = externalMergeAndSort(chunks);
+            this.result = externalMergeAndSort(mergedInputPaths);
           } catch (Exception e) {
             throw new PhysicalPlanningException(e);
           }
+        } else {
+          // Try to sort all data, and store them as multiple chunks if memory exceeds
+          long startTimeOfChunkSplit = System.currentTimeMillis();
+          List<Path> chunks = sortAndStoreAllChunks();
+          long endTimeOfChunkSplit = System.currentTimeMillis();
+          info(LOG, "Sort of all chunks is completed (" + (endTimeOfChunkSplit - startTimeOfChunkSplit) + " msec).");
 
+          if (memoryResident) { // if all sorted data reside in a main-memory table.
+            this.result = new MemTableScanner(sortedTuples, bytesOfLatestChunk);
+          } else { // if input data exceeds main-memory at least once
+
+            try {
+              this.result = externalMergeAndSort(chunks);
+            } catch (Exception e) {
+              throw new PhysicalPlanningException(e);
+            }
+
+          }
         }
+
+        sorted = true;
+        result.init();
+
+        // if loaded and sorted, we assume that it proceeds the half of one entire external sort operation.
+        progress = 0.5f;
+        nanoTimeSort += stopWatch.checkNano(5);
       }
 
-      sorted = true;
-      result.init();
+      Tuple tuple = result.next();
 
-      // if loaded and sorted, we assume that it proceeds the half of one entire external sort operation.
-      progress = 0.5f;
+      numOutTuple++;
+      if (memoryResident) {
+        numNextMemory++;
+      }
+      return tuple;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
-
-    return result.next();
   }
 
   private int calculateFanout(int remainInputChunks, int intputNum, int outputNum, int startIdx) {
@@ -534,8 +564,19 @@ public class ExternalSortExec extends SortExec {
       executorService = null;
     }
 
+    int pid = plan.getPID();
     plan = null;
     super.close();
+
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".ChildScan.nanoTime", nanoTimeChildScan);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortScan.nanoTime", nanoTimeSortScan);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortWrite.nanoTime", nanoTimeSortWrite);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".MemorySort.nanoTime", nanoTimeMemorySort);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".Sort.nanoTime", nanoTimeSort);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".numNextMemory", numNextMemory);
+
+    closeProfile(pid);
+
   }
 
   @Override

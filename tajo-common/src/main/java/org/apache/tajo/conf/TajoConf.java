@@ -300,6 +300,7 @@ public class TajoConf extends Configuration {
     // Also, users can change the default values of session variables in tajo-site.xml.
     /////////////////////////////////////////////////////////////////////////////////
 
+    ENABLE_QUERY_PROFILE("tajo.enable.query.profile", true),
 
     $EMPTY("tajo._", ""),
 

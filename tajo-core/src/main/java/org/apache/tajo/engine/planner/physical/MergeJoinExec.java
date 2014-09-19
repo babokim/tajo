@@ -28,6 +28,7 @@ import org.apache.tajo.storage.BaseTupleComparator;
 import org.apache.tajo.storage.FrameTuple;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.storage.VTuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -89,6 +90,8 @@ public class MergeJoinExec extends BinaryPhysicalExec {
     // for join
     frameTuple = new FrameTuple();
     outTuple = new VTuple(outSchema.size());
+
+    stopWatch = new StopWatch(5);
   }
 
   @Override
@@ -101,75 +104,80 @@ public class MergeJoinExec extends BinaryPhysicalExec {
   }
 
   public Tuple next() throws IOException {
+    stopWatch.reset(0);
     Tuple previous;
 
-    for (;;) {
-      if (!outerIterator.hasNext() && !innerIterator.hasNext()) {
-        if(end){
-          return null;
-        }
-
-        if(outerTuple == null){
-          outerTuple = leftChild.next();
-        }
-        if(innerTuple == null){
-          innerTuple = rightChild.next();
-        }
-
-        outerTupleSlots.clear();
-        innerTupleSlots.clear();
-
-        int cmp;
-        while ((cmp = joincomparator.compare(outerTuple, innerTuple)) != 0) {
-          if (cmp > 0) {
-            innerTuple = rightChild.next();
-          } else if (cmp < 0) {
-            outerTuple = leftChild.next();
-          }
-          if (innerTuple == null || outerTuple == null) {
+    try {
+      for (; ; ) {
+        if (!outerIterator.hasNext() && !innerIterator.hasNext()) {
+          if (end) {
             return null;
           }
-        }
 
-        try {
-          previous = outerTuple.clone();
-          do {
-            outerTupleSlots.add(outerTuple.clone());
+          if (outerTuple == null) {
             outerTuple = leftChild.next();
-            if (outerTuple == null) {
-              end = true;
-              break;
-            }
-          } while (tupleComparator[0].compare(previous, outerTuple) == 0);
-          outerIterator = outerTupleSlots.iterator();
-          outerNext = outerIterator.next();
-
-          previous = innerTuple.clone();
-          do {
-            innerTupleSlots.add(innerTuple.clone());
+          }
+          if (innerTuple == null) {
             innerTuple = rightChild.next();
-            if (innerTuple == null) {
-              end = true;
-              break;
-            }
-          } while (tupleComparator[1].compare(previous, innerTuple) == 0);
-          innerIterator = innerTupleSlots.iterator();
-        } catch (CloneNotSupportedException e) {
+          }
 
+          outerTupleSlots.clear();
+          innerTupleSlots.clear();
+
+          int cmp;
+          while ((cmp = joincomparator.compare(outerTuple, innerTuple)) != 0) {
+            if (cmp > 0) {
+              innerTuple = rightChild.next();
+            } else if (cmp < 0) {
+              outerTuple = leftChild.next();
+            }
+            if (innerTuple == null || outerTuple == null) {
+              return null;
+            }
+          }
+
+          try {
+            previous = outerTuple.clone();
+            do {
+              outerTupleSlots.add(outerTuple.clone());
+              outerTuple = leftChild.next();
+              if (outerTuple == null) {
+                end = true;
+                break;
+              }
+            } while (tupleComparator[0].compare(previous, outerTuple) == 0);
+            outerIterator = outerTupleSlots.iterator();
+            outerNext = outerIterator.next();
+
+            previous = innerTuple.clone();
+            do {
+              innerTupleSlots.add(innerTuple.clone());
+              innerTuple = rightChild.next();
+              if (innerTuple == null) {
+                end = true;
+                break;
+              }
+            } while (tupleComparator[1].compare(previous, innerTuple) == 0);
+            innerIterator = innerTupleSlots.iterator();
+          } catch (CloneNotSupportedException e) {
+
+          }
+        }
+
+        if (!innerIterator.hasNext()) {
+          outerNext = outerIterator.next();
+          innerIterator = innerTupleSlots.iterator();
+        }
+
+        frameTuple.set(outerNext, innerIterator.next());
+
+        if (joinQual.eval(inSchema, frameTuple).isTrue()) {
+          projector.eval(frameTuple, outTuple);
+          return outTuple;
         }
       }
-
-      if(!innerIterator.hasNext()){
-        outerNext = outerIterator.next();
-        innerIterator = innerTupleSlots.iterator();
-      }
-
-      frameTuple.set(outerNext, innerIterator.next());
-
-      if (joinQual.eval(inSchema, frameTuple).isTrue()) {
-        projector.eval(frameTuple, outTuple);
-        return outTuple;
-      }
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 
@@ -184,8 +192,9 @@ public class MergeJoinExec extends BinaryPhysicalExec {
 
   @Override
   public void close() throws IOException {
+    int pid = joinNode.getPID();
     super.close();
-
+    closeProfile(pid);
     outerTupleSlots.clear();
     innerTupleSlots.clear();
     outerTupleSlots = null;

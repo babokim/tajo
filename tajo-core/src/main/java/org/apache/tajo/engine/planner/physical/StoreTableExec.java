@@ -32,6 +32,7 @@ import org.apache.tajo.storage.Appender;
 import org.apache.tajo.storage.StorageManagerFactory;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.unit.StorageUnit;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -56,9 +57,11 @@ public class StoreTableExec extends UnaryPhysicalExec {
   public StoreTableExec(TaskAttemptContext context, PersistentStoreNode plan, PhysicalExec child) throws IOException {
     super(context, plan.getInSchema(), plan.getOutSchema(), child);
     this.plan = plan;
+    stopWatch = new StopWatch(5);
   }
 
   public void init() throws IOException {
+    stopWatch.reset(1);
     super.init();
 
     if (plan.hasOptions()) {
@@ -72,6 +75,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
 
     openNewFile(writtenFileNum);
     sumStats = new TableStats();
+    nanoTimeInit = stopWatch.checkNano(1);
   }
 
   public void openNewFile(int suffixId) throws IOException {
@@ -106,19 +110,29 @@ public class StoreTableExec extends UnaryPhysicalExec {
    */
   @Override
   public Tuple next() throws IOException {
-    while((tuple = child.next()) != null) {
-      appender.addTuple(tuple);
+    stopWatch.reset(0);
+    try {
+      while (true) {
+        tuple = child.next();
+        if (tuple == null) {
+          break;
+        }
+        numOutTuple++;
+        appender.addTuple(tuple);
 
-      if (maxPerFileSize > 0 && maxPerFileSize <= appender.getEstimatedOutputSize()) {
-        appender.close();
+        if (maxPerFileSize > 0 && maxPerFileSize <= appender.getEstimatedOutputSize()) {
+          appender.close();
 
-        writtenFileNum++;
-        StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
-        openNewFile(writtenFileNum);
+          writtenFileNum++;
+          StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
+          openNewFile(writtenFileNum);
+        }
       }
+
+      return null;
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
-        
-    return null;
   }
 
   @Override
@@ -127,6 +141,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
   }
 
   public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
 
     if(appender != null){
@@ -143,7 +158,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
         context.addShuffleFileOutput(0, context.getTaskId().toString());
       }
     }
-
+    closeProfile(pid);
     appender = null;
     plan = null;
   }
