@@ -636,6 +636,7 @@ public class Task {
           if (retryNum == maxRetryNum) {
             LOG.error("ERROR: the maximum retry (" + retryNum + ") on the fetch exceeded (" + fetcher.getURI() + ")");
           }
+          LOG.error("Fetcher.state=" + fetcher.getState() + " (" + fetcher.getURI() + ")");
           aborted = true; // retry queryUnit
           ctx.getFetchLatch().countDown();
         }

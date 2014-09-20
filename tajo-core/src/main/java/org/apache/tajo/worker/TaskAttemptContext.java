@@ -157,6 +157,9 @@ public class TaskAttemptContext extends ProfileContext {
   
   public void setState(TaskAttemptState state) {
     this.state = state;
+    if (this.state == TaskAttemptState.TA_FAILED) {
+      Thread.dumpStack();
+    }
     LOG.info("Query status of " + getTaskId() + " is changed to " + state);
   }
 

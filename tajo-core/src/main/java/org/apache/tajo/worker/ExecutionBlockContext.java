@@ -167,6 +167,7 @@ public class ExecutionBlockContext {
     for (Task task : tasks.values()) {
       if (task.getStatus() == TajoProtos.TaskAttemptState.TA_PENDING ||
           task.getStatus() == TajoProtos.TaskAttemptState.TA_RUNNING) {
+        LOG.error(task.getId() + " FAILED cause not succeed until calling EB.stop, task.status=" + task.getStatus());
         task.setState(TajoProtos.TaskAttemptState.TA_FAILED);
         try{
           task.abort();
