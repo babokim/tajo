@@ -63,6 +63,10 @@ public class QueryProfiler {
       }
       boolean alreadyExists = false;
       for (QueryProfileMetrics eachMetrics: metricsList) {
+        System.out.println(">>>>>>>>metrics.operatorName>" + ebId + ">" + metrics.operatorName);
+        if (metrics.operatorName.indexOf("Sort") >= 0) {
+          Thread.dumpStack();
+        }
         if (eachMetrics.operatorName.equals(metrics.operatorName)) {
           for (Map.Entry<String, AtomicLong> entry: metrics.metricsValues.entrySet()) {
             eachMetrics.addValue(entry.getKey(), entry.getValue().longValue());

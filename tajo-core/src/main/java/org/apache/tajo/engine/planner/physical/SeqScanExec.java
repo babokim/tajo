@@ -99,11 +99,12 @@ public class SeqScanExec extends PhysicalExec {
       rewriteColumnPartitionedTableSchema();
     }
 
+    pid = plan.getPID();
     if (this.qual != null) {
-      evalNodeKey = this.getClass().getSimpleName() + "_" + plan.getPID() + "." + this.qual.getClass().getSimpleName();
+      evalNodeKey = this.getClass().getSimpleName() + "_" + pid + "." + this.qual.getClass().getSimpleName();
     }
 
-    projectorEvalNodeKey = this.getClass().getSimpleName() + "_" + plan.getPID() + ".project";
+    projectorEvalNodeKey = this.getClass().getSimpleName() + "_" + pid + ".project";
 
     stopWatch = new StopWatch(4);
   }

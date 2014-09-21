@@ -208,7 +208,9 @@ public class ExternalSortExec extends SortExec {
       if (tuple == null) {
         break;
       }
+      stopWatch.reset(6);   //nanoTimeTupleConvert
       RowStoreUtil.convert(tuple, tupleBlock.getWriter());
+      nanoTimeTupleConvert += stopWatch.checkNano(6);
 
       if (tupleBlock.usedMem() > sortBufferBytesNum) {
         long runEndTime = System.currentTimeMillis();
@@ -239,7 +241,9 @@ public class ExternalSortExec extends SortExec {
     }
 
     if (tupleBlock.rows() >= 0) { // if there are at least one or more input tuples
+      stopWatch.reset(2);
       sortedTuples = OffHeapRowBlockUtils.sort(tupleBlock, getComparator());
+      nanoTimeMemorySort += stopWatch.checkNano(2);
     }
 
     // get total loaded (or stored) bytes and total row numbers
@@ -268,6 +272,7 @@ public class ExternalSortExec extends SortExec {
   long nanoTimeMemorySort;
   long numNextMemory;
   long nanoTimeSort;
+  long nanoTimeTupleConvert;
 
   @Override
   public Tuple next() throws IOException {
@@ -463,11 +468,21 @@ public class ExternalSortExec extends SortExec {
       final Scanner merger = createKWayMerger(inputFiles, startIdx, mergeFanout);
       merger.init();
       Tuple mergeTuple;
-      while((mergeTuple = merger.next()) != null) {
+      while(true) {
+        stopWatch.reset(7);   //sortScan
+        mergeTuple = merger.next();
+        if (mergeTuple == null) {
+          break;
+        }
+        nanoTimeSortScan += stopWatch.checkNano(7);
+        stopWatch.reset(3);   //sortWrite
         output.addTuple(mergeTuple);
+        nanoTimeSortWrite += stopWatch.checkNano(3); //sortWrite/
       }
       merger.close();
+      stopWatch.reset(3);   //sortWrite
       output.close();
+      nanoTimeSortWrite += stopWatch.checkNano(3); //sortWrite/
       long mergeEndTime = System.currentTimeMillis();
       info(LOG, outputPath.getName() + " is written to a disk. ("
           + FileUtil.humanReadableByteCount(output.getOffset(), false)
@@ -568,10 +583,11 @@ public class ExternalSortExec extends SortExec {
     plan = null;
     super.close();
 
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".TupleConvert.nanoTime", nanoTimeTupleConvert);
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".ChildScan.nanoTime", nanoTimeChildScan);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".MemorySort.nanoTime", nanoTimeMemorySort);
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortScan.nanoTime", nanoTimeSortScan);
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".SortWrite.nanoTime", nanoTimeSortWrite);
-    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".MemorySort.nanoTime", nanoTimeMemorySort);
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".Sort.nanoTime", nanoTimeSort);
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".numNextMemory", numNextMemory);
 

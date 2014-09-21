@@ -108,10 +108,12 @@ public abstract class PhysicalExec implements SchemaObject {
 
   protected void closeProfile(int id) {
     if (context.isEnabledProfile()) {
-      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".init.nanoTime", nanoTimeInit);
-      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".next.nanoTime", nanoTimeNext);
-      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".inTuples", numInTuple);
-      putProfileMetrics(id, getClass().getSimpleName() + "_" + id + ".outTuples", numOutTuple);
+      String pid = "_" + id;
+
+      putProfileMetrics(id, getClass().getSimpleName() + pid + ".init.nanoTime", nanoTimeInit);
+      putProfileMetrics(id, getClass().getSimpleName() + pid + ".next.nanoTime", nanoTimeNext);
+      putProfileMetrics(id, getClass().getSimpleName() + pid + ".inTuples", numInTuple);
+      putProfileMetrics(id, getClass().getSimpleName() + pid + ".outTuples", numOutTuple);
 
       if (context.getTaskId() != null) {
         QueryProfiler.addProfileMetrics(context.getTaskId().getQueryUnitId().getExecutionBlockId(), profileMetrics);

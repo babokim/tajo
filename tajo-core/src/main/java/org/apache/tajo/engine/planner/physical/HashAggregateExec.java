@@ -18,6 +18,8 @@
 
 package org.apache.tajo.engine.planner.physical;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.tajo.engine.function.FunctionContext;
 import org.apache.tajo.engine.planner.logical.GroupbyNode;
 import org.apache.tajo.storage.Tuple;
@@ -58,7 +60,7 @@ public class HashAggregateExec extends AggregationExec {
     while((tuple = child.next()) != null && !context.isStopped()) {
       numCompute++;
       numInTuple++;
-      stopWatch.reset(3); //join
+      stopWatch.reset(3); //aggregation
       keyTuple = new VTuple(groupingKeyIds.length);
       // build one key tuple
       for(int i = 0; i < groupingKeyIds.length; i++) {
@@ -78,7 +80,7 @@ public class HashAggregateExec extends AggregationExec {
         }
         hashTable.put(keyTuple, contexts);
       }
-      nanoTimeAggr += stopWatch.checkNano(3); //join
+      nanoTimeAggr += stopWatch.checkNano(3); //aggregation
     }
 
     // If HashAggregateExec received NullDatum and didn't has any grouping keys,
@@ -138,6 +140,7 @@ public class HashAggregateExec extends AggregationExec {
     super.close();
     hashTable.clear();
     putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".compute.nanoTime", nanoTimeCompute);
+    putProfileMetrics(pid, getClass().getSimpleName() + "_" + pid + ".aggregation.nanoTime", nanoTimeAggr);
     closeProfile(pid);
     hashTable = null;
     iterator = null;

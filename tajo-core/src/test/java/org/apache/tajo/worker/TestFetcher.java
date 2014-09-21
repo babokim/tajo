@@ -98,7 +98,7 @@ public class TestFetcher {
     stream.close();
 
     URI uri = URI.create("http://127.0.0.1:" + pullServerService.getPort() + "/?" + params);
-    final Fetcher fetcher = new Fetcher(conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
+    final Fetcher fetcher = new Fetcher(null, conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
     assertNotNull(fetcher.get());
 
     FileSystem fs = FileSystem.getLocal(new TajoConf());
@@ -140,7 +140,7 @@ public class TestFetcher {
     stream.close();
 
     URI uri = URI.create("http://127.0.0.1:" + pullServerService.getPort() + "/?" + params);
-    final Fetcher fetcher = new Fetcher(conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
+    final Fetcher fetcher = new Fetcher(null, conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
     assertEquals(TajoProtos.FetcherState.FETCH_INIT, fetcher.getState());
 
     fetcher.get();
@@ -168,7 +168,7 @@ public class TestFetcher {
     stream.close();
 
     URI uri = URI.create("http://127.0.0.1:" + pullServerService.getPort() + "/?" + params);
-    final Fetcher fetcher = new Fetcher(conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
+    final Fetcher fetcher = new Fetcher(null, conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
     assertEquals(TajoProtos.FetcherState.FETCH_INIT, fetcher.getState());
 
     fetcher.get();
@@ -200,7 +200,7 @@ public class TestFetcher {
     stream.close();
 
     URI uri = URI.create("http://127.0.0.1:" + pullServerService.getPort() + "/?" + params);
-    final Fetcher fetcher = new Fetcher(conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
+    final Fetcher fetcher = new Fetcher(null, conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
     assertEquals(TajoProtos.FetcherState.FETCH_INIT, fetcher.getState());
 
     fetcher.get();
@@ -218,7 +218,7 @@ public class TestFetcher {
     String params = String.format("qid=%s&sid=%s&p=%s&type=%s&ta=%s", queryId, sid, partId, "h", ta);
 
     URI uri = URI.create("http://127.0.0.1:" + pullServerService.getPort() + "/?" + params);
-    final Fetcher fetcher = new Fetcher(conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
+    final Fetcher fetcher = new Fetcher(null, conf, uri, new File(OUTPUT_DIR + "data"), channelFactory, timer);
     assertEquals(TajoProtos.FetcherState.FETCH_INIT, fetcher.getState());
 
     pullServerService.stop();

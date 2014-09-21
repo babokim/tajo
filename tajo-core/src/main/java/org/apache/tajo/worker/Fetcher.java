@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 
 import static org.jboss.netty.channel.Channels.pipeline;
@@ -66,7 +67,9 @@ public class Fetcher {
 
   private ClientBootstrap bootstrap;
 
-  public Fetcher(TajoConf conf, URI uri, File file, ClientSocketChannelFactory factory, Timer timer) {
+  private TaskAttemptContext context;
+  public Fetcher(TaskAttemptContext context, TajoConf conf, URI uri, File file, ClientSocketChannelFactory factory, Timer timer) {
+    this.context = context;
     this.uri = uri;
     this.file = file;
     this.state = TajoProtos.FetcherState.FETCH_INIT;
@@ -222,7 +225,12 @@ public class Fetcher {
           } else {
             ChannelBuffer content = response.getContent();
             if (content.readable()) {
-              fc.write(content.toByteBuffer());
+              ByteBuffer b = content.toByteBuffer();
+              long startNanoTime = System.nanoTime();
+              fc.write(b);
+              if (context != null) {
+                context.addWriteNanoTime(System.nanoTime() - startNanoTime);
+              }
             }
           }
         } else {
@@ -239,7 +247,12 @@ public class Fetcher {
             }
           } else {
             if(fc != null){
-              fc.write(chunk.getContent().toByteBuffer());
+              ByteBuffer b = chunk.getContent().toByteBuffer();
+              long startNanoTime = System.nanoTime();
+              fc.write(b);
+              if (context != null) {
+                context.addWriteNanoTime(System.nanoTime() - startNanoTime);
+              }
             }
           }
         }

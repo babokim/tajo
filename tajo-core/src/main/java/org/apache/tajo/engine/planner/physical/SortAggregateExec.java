@@ -51,6 +51,8 @@ public class SortAggregateExec extends AggregationExec {
     super(context, plan, child);
     contexts = new FunctionContext[plan.getAggFunctions() == null ? 0 : plan.getAggFunctions().length];
     stopWatch = new StopWatch(10);
+    System.out.println("========================SortAggregation:" + plan.getPID());
+    Thread.dumpStack();
   }
 
   @Override

@@ -31,6 +31,7 @@ import org.apache.tajo.storage.AbstractStorageManager;
 import org.apache.tajo.storage.HashShuffleAppender;
 import org.apache.tajo.storage.HashShuffleAppenderManager;
 import org.apache.tajo.storage.Tuple;
+import org.apache.tajo.util.StopWatch;
 import org.apache.tajo.worker.TaskAttemptContext;
 
 import java.io.IOException;
@@ -76,11 +77,13 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     this.partitioner = new HashPartitioner(shuffleKeyIds, numShuffleOutputs);
     this.hashShuffleAppenderManager = context.getHashShuffleAppenderManager();
     this.numHashShuffleBufferTuples = context.getConf().getIntVar(ConfVars.SHUFFLE_HASH_APPENDER_BUFFER_SIZE);
+    stopWatch = new StopWatch(5);
   }
 
   @Override
   public void init() throws IOException {
     super.init();
+    nanoTimeInit = stopWatch.checkNano(1);
   }
   
   private HashShuffleAppender getAppender(int partId) throws IOException {
@@ -104,6 +107,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
       int partId;
       int tupleCount = 0;
       long numRows = 0;
+      stopWatch.reset(0);
       while ((tuple = child.next()) != null) {
         tupleCount++;
         numRows++;
@@ -115,6 +119,7 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
           partitionTuples.put(partId, partitionTupleList);
         }
         try {
+          numOutTuple++;
           partitionTupleList.add(tuple.clone());
         } catch (CloneNotSupportedException e) {
         }
@@ -150,6 +155,8 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
     } catch (Exception e) {
       LOG.error(e.getMessage(), e);
       throw new IOException(e);
+    } finally {
+      nanoTimeNext += stopWatch.checkNano(0);
     }
   }
 
@@ -159,13 +166,14 @@ public final class HashShuffleFileWriteExec extends UnaryPhysicalExec {
   }
 
   @Override
-  public void close() throws IOException{
+  public void close() throws IOException {
+    int pid = plan.getPID();
     super.close();
     if (appenderMap != null) {
       appenderMap.clear();
       appenderMap = null;
     }
-
+    closeProfile(pid);
     partitioner = null;
     plan = null;
 

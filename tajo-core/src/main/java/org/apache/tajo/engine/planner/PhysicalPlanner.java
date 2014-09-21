@@ -29,7 +29,7 @@ import org.apache.tajo.exception.InternalException;
 /**
  * This class generates a physical execution plan.
  */
-public interface PhysicalPlanner {
+public interface PhysichhalPlanner {
   public PhysicalExec createPlan(TaskAttemptContext context,
                                  LogicalNode logicalPlan)
       throws InternalException;

@@ -50,6 +50,7 @@ import org.apache.tajo.ipc.TajoWorkerProtocol.*;
 import org.apache.tajo.ipc.TajoWorkerProtocol.EnforceProperty.EnforceType;
 import org.apache.tajo.rpc.NullCallback;
 import org.apache.tajo.storage.BaseTupleComparator;
+import org.apache.tajo.storage.RawFile;
 import org.apache.tajo.storage.StorageUtil;
 import org.apache.tajo.storage.TupleComparator;
 import org.apache.tajo.storage.fragment.FileFragment;
@@ -415,7 +416,9 @@ public class Task {
   }
 
   public void run() throws Exception {
+    long nanoTimeFetch = -1;
     startTime = System.currentTimeMillis();
+    long nanoTimeStart = System.nanoTime();
     Throwable error = null;
     try {
       context.setState(TaskAttemptState.TA_RUNNING);
@@ -423,7 +426,9 @@ public class Task {
       if (context.hasFetchPhase()) {
         // If the fetch is still in progress, the query unit must wait for
         // complete.
+        long startFetchTime = System.nanoTime();
         waitForFetch();
+        nanoTimeFetch = System.nanoTime() - startFetchTime;
         context.setFetcherProgress(FETCHER_PROGRESS);
         context.setProgressChanged(true);
         updateProgress();
@@ -440,6 +445,9 @@ public class Task {
       LOG.error(e.getMessage(), e);
       aborted = true;
     } finally {
+      context.addProfileMetrics("Task", new String[]{"Task.fetch", "Task.fetch.write", "Task.total"},
+          new long[]{nanoTimeFetch, context.getFetchWriteNanoTime(), System.nanoTime() - nanoTimeStart});
+
       if (executor != null) {
         try {
           executor.close();
@@ -689,8 +697,8 @@ public class Task {
           if (!storeDir.exists()) {
             storeDir.mkdirs();
           }
-          storeFile = new File(storeDir, "in_" + i);
-          Fetcher fetcher = new Fetcher(systemConf, uri, storeFile, channelFactory, timer);
+          storeFile = new File(storeDir, "in_" + i + "." + RawFile.FILE_EXTENSION);
+          Fetcher fetcher = new Fetcher(context, systemConf, uri, storeFile, channelFactory, timer);
           runnerList.add(fetcher);
           i++;
         }

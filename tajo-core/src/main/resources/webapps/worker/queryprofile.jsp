@@ -58,7 +58,7 @@
 <div class='contents'>
   <h2>Tajo Worker: <a href='index.jsp'><%=tajoWorker.getWorkerContext().getWorkerName()%></a></h2>
   <hr/>
-  <h3><%=queryId.toString()%> <a href='querydetail.jsp?queryId=<%=queryId%>'>[Query Detail]</a><a href='profilejson.jsp?queryId=<%=queryId%>'>[JSON]</a></h3>
+  <h3><%=queryId.toString()%>&nbsp;&nbsp;<a href='profilejson.jsp?queryId=<%=queryId%>'>[JSON]</a>&nbsp;&nbsp;<a href='querydetail.jsp?queryId=<%=queryId%>'>[Query Detail]</a></h3>
   <pre>
   <%=JSPUtil.profileToString(profileData)%>
   </pre>

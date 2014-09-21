@@ -238,6 +238,7 @@ public class Query implements EventHandler<QueryEvent> {
   public float getProgress() {
     QueryState state = getState();
     if (state == QueryState.QUERY_SUCCEEDED) {
+      LOG.info(">>>>>>>>>>>>>>>>getProgress:QueryState.QUERY_SUCCEEDED");
       return 1.0f;
     } else {
       int idx = 0;
@@ -261,6 +262,7 @@ public class Query implements EventHandler<QueryEvent> {
       }
 
       if (finished) {
+        LOG.info(">>>>>>>>>>>>>>>>getProgress:finished, tempSubQueries=" + tempSubQueries.size());
         return 1.0f;
       }
 

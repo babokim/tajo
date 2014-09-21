@@ -229,6 +229,9 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
         subQuery.getEventHandler().handle(new TaskEvent(task.getId(), TaskEventType.T_SCHEDULE));
       } else if (event instanceof QueryUnitAttemptScheduleEvent) {
         QueryUnitAttemptScheduleEvent castEvent = (QueryUnitAttemptScheduleEvent) event;
+        if(castEvent.getQueryUnitAttempt().getQueryUnit().getRetryCount() > 0 ){
+          scheduledObjectNum++;
+        }
         if (context.isLeafQuery()) {
           scheduledRequests.addLeafTask(castEvent);
         } else {
@@ -800,7 +803,6 @@ public class DefaultTaskScheduler extends AbstractTaskScheduler {
               //release container
               hostVolumeMapping.decreaseConcurrency(containerId);
               taskRequest.getCallback().run(stopTaskRunnerReq);
-              subQuery.releaseContainer(containerId);
               continue;
             }
           }
