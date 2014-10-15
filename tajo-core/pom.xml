@@ -37,6 +37,7 @@
     <metrics.version>3.0.1</metrics.version>
   </properties>
 
+  <!--
   <repositories>
     <repository>
       <id>repository.jboss.org</id>
@@ -47,7 +48,7 @@
       </snapshots>
     </repository>
   </repositories>
-
+  -->
   <build>
     <plugins>
       <plugin>
@@ -392,6 +393,33 @@
       <groupId>info.ganglia.gmetric4j</groupId>
       <artifactId>gmetric4j</artifactId>
       <version>1.0.3</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-server</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-server</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-hadoop-compat</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-hadoop2-compat</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+      <type>test-jar</type>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 

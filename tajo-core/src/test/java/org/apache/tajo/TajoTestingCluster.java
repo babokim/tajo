@@ -26,6 +26,8 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hbase.MiniHBaseCluster;
+import org.apache.hadoop.hbase.zookeeper.MiniZooKeeperCluster;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.hdfs.MiniDFSCluster;
@@ -64,6 +66,7 @@ public class TajoTestingCluster {
   private FileSystem defaultFS;
   private MiniDFSCluster dfsCluster;
 	private MiniCatalogServer catalogServer;
+  private HBaseTestClusterUtil hbaseUtil;
 
   private TajoMaster tajoMaster;
   private List<TajoWorker> tajoWorkers = new ArrayList<TajoWorker>();
@@ -239,6 +242,10 @@ public class TajoTestingCluster {
 
   public FileSystem getDefaultFileSystem() {
     return this.defaultFS;
+  }
+
+  public HBaseTestClusterUtil getHBaseUtil() {
+    return hbaseUtil;
   }
 
   ////////////////////////////////////////////////////////
@@ -464,6 +471,10 @@ public class TajoTestingCluster {
     startMiniDFSCluster(numDataNodes, this.clusterTestBuildDir, dataNodeHosts);
     this.dfsCluster.waitClusterUp();
 
+    hbaseUtil = new HBaseTestClusterUtil(conf, clusterTestBuildDir);
+    hbaseUtil.startHBaseCluster();
+    LOG.info("HBase cluster started");
+
     if(!standbyWorkerMode) {
       startMiniYarnCluster();
     }
@@ -561,6 +572,14 @@ public class TajoTestingCluster {
       }
     }
 
+    if (this.hbaseUtil != null) {
+      try {
+        this.hbaseUtil.stopHBaseCluster();
+      } catch (Exception e) {
+        System.err.println("error stopping hbase cluster: " + e);
+      }
+    }
+
     if(this.clusterTestBuildDir != null && this.clusterTestBuildDir.exists()) {
       if(!ShutdownHookManager.get().isShutdownInProgress()) {
         //TODO clean test dir when ShutdownInProgress
@@ -570,6 +589,7 @@ public class TajoTestingCluster {
       }
       this.clusterTestBuildDir = null;
     }
+
     LOG.info("Minicluster is down");
   }
 

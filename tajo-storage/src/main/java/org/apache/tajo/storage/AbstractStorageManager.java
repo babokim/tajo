@@ -29,6 +29,7 @@ import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.TableMeta;
 import org.apache.tajo.catalog.proto.CatalogProtos;
+import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.Fragment;
@@ -725,5 +726,14 @@ public abstract class AbstractStorageManager {
     }
 
     return result;
+  }
+
+  public TajoStorageHandler getStorageHandler(StoreType storeType) {
+    switch (storeType) {
+      case HBASE:
+        return new HBaseStoreHandler();
+      default:
+        return new DiskBasedStoreHandler();
+    }
   }
 }

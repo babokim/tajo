@@ -316,6 +316,11 @@
       <artifactId>parquet-format</artifactId>
       <version>${parquet.format.version}</version>
     </dependency>
+    <dependency>
+      <groupId>org.apache.hbase</groupId>
+      <artifactId>hbase-client</artifactId>
+      <version>0.98.6.1-hadoop2</version>
+    </dependency>
   </dependencies>
 
   <profiles>

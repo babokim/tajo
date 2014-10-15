@@ -32,6 +32,7 @@ import org.apache.tajo.catalog.SortSpec;
 import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
+import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.common.TajoDataTypes.DataType;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.eval.*;
@@ -883,6 +884,22 @@ public class PlannerUtil {
           return;
         }
       }
+    }
+  }
+
+  public static boolean isFileStorageType(String storageType) {
+    if (storageType.equalsIgnoreCase("hbase")) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
+  public static boolean isFileStorageType(StoreType storageType) {
+    if (storageType== StoreType.HBASE) {
+      return false;
+    } else {
+      return true;
     }
   }
 }

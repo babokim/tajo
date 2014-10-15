@@ -213,8 +213,8 @@ message CreateTableRequest {
   required string name = 2;
   required SchemaProto schema = 3;
   required TableProto meta = 4;
-  required string path = 5;
-  optional PartitionMethodProto partition = 6;
+  optional string path = 5;
+  optional PartitionMethodProto partition = 7;
 }
 
 message DropTableRequest {

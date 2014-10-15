@@ -73,8 +73,6 @@ import static org.apache.tajo.ipc.ClientProtos.SerializedResultSet;
 
 @ThreadSafe
 public class TajoClient implements Closeable {
-  public static final int UNKNOWN_ROW_NUMBER = -1;
-
   private final Log LOG = LogFactory.getLog(TajoClient.class);
 
   private final TajoConf conf;

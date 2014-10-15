@@ -35,6 +35,7 @@ import org.apache.tajo.catalog.partition.PartitionMethodDesc;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.conf.TajoConf.ConfVars;
+import org.apache.tajo.engine.planner.PlannerUtil;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.ClientProtos;
 import org.apache.tajo.ipc.ClientProtos.*;
@@ -747,15 +748,22 @@ public class TajoMasterClientService extends AbstractService {
         Session session = context.getSessionManager().getSession(request.getSessionId().getId());
         QueryContext queryContext = new QueryContext(conf, session);
 
-        Path path = new Path(request.getPath());
-        FileSystem fs = path.getFileSystem(conf);
-
-        if (!fs.exists(path)) {
-          throw new IOException("No such a directory: " + path);
-        }
-
         Schema schema = new Schema(request.getSchema());
         TableMeta meta = new TableMeta(request.getMeta());
+
+        Path path = null;
+        if (PlannerUtil.isFileStorageType(meta.getStoreType())) {
+          if (!request.hasPath()) {
+            throw new IOException("path parameter required.");
+          }
+          path = new Path(request.getPath());
+          FileSystem fs = path.getFileSystem(conf);
+
+          if (!fs.exists(path)) {
+            throw new IOException("No such a directory: " + path);
+          }
+        }
+
         PartitionMethodDesc partitionDesc = null;
         if (request.hasPartition()) {
           partitionDesc = new PartitionMethodDesc(request.getPartition());
@@ -763,7 +771,8 @@ public class TajoMasterClientService extends AbstractService {
 
         TableDesc desc;
         try {
-          desc = context.getGlobalEngine().createTableOnPath(queryContext, request.getName(), schema,
+          desc = context.getGlobalEngine().createTable(queryContext, request.getName(),
+              meta.getStoreType(), schema,
               meta, path, true, partitionDesc, false);
         } catch (Exception e) {
           return TableResponse.newBuilder()
