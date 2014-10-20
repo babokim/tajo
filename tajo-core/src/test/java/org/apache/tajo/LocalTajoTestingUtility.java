@@ -33,6 +33,7 @@ import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.engine.planner.global.MasterPlan;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.master.session.Session;
+import org.apache.tajo.storage.TajoStorageHandler;
 import org.apache.tajo.util.CommonTestingUtil;
 import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.util.TajoIdUtils;
@@ -100,7 +101,7 @@ public class LocalTajoTestingUtility {
     client = new TajoClient(conf);
 
     FileSystem fs = util.getDefaultFileSystem();
-    Path rootDir = util.getMaster().getStorageManager().getWarehouseDir();
+    Path rootDir = TajoStorageHandler.getFileStorageHandler(util.getConfiguration()).getWarehouseDir();
     fs.mkdirs(rootDir);
     for (int i = 0; i < tablepaths.length; i++) {
       Path localPath = new Path(tablepaths[i]);

@@ -29,6 +29,7 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.common.TajoDataTypes.Type;
 import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.DatumFactory;
 import org.apache.tajo.engine.parser.SQLAnalyzer;
@@ -66,7 +67,7 @@ public class TestBSTIndexExec {
   private SQLAnalyzer analyzer;
   private LogicalPlanner planner;
   private LogicalOptimizer optimizer;
-  private AbstractStorageManager sm;
+  private FileStorageHandler sm;
   private Schema idxSchema;
   private TupleComparator comp;
   private BSTIndex.BSTIndexWriter writer;
@@ -91,7 +92,7 @@ public class TestBSTIndexExec {
     Path workDir = CommonTestingUtil.getTestDir();
     catalog.createTablespace(DEFAULT_TABLESPACE_NAME, workDir.toUri().toString());
     catalog.createDatabase(TajoConstants.DEFAULT_DATABASE_NAME, DEFAULT_TABLESPACE_NAME);
-    sm = StorageManagerFactory.getStorageManager(conf, workDir);
+    conf.setVar(ConfVars.WAREHOUSE_DIR, workDir.toUri().toString());
 
     idxPath = new Path(workDir, "test.idx");
 
@@ -117,7 +118,7 @@ public class TestBSTIndexExec {
     fs = tablePath.getFileSystem(conf);
     fs.mkdirs(tablePath.getParent());
 
-    FileAppender appender = (FileAppender)StorageManagerFactory.getStorageManager(conf).getAppender(meta, schema,
+    FileAppender appender = (FileAppender)TajoStorageHandler.getFileStorageHandler(conf).getAppender(meta, schema,
         tablePath);
     appender.init();
     Tuple tuple = new VTuple(schema.size());
@@ -167,7 +168,8 @@ public class TestBSTIndexExec {
     this.rndKey = rnd.nextInt(250);
     final String QUERY = "select * from employee where managerId = " + rndKey;
     
-    FileFragment[] frags = StorageManager.splitNG(conf, "default.employee", meta, tablePath, Integer.MAX_VALUE);
+    FileFragment[] frags = TajoStorageHandler.getFileStorageHandler(conf)
+        .splitNG(conf, "default.employee", meta, tablePath, Integer.MAX_VALUE);
     Path workDir = CommonTestingUtil.getTestDir("target/test-data/testEqual");
     TaskAttemptContext ctx = new TaskAttemptContext(new QueryContext(conf),
         LocalTajoTestingUtility.newQueryUnitAttemptId(), new FileFragment[] { frags[0] }, workDir);
@@ -175,7 +177,7 @@ public class TestBSTIndexExec {
     LogicalPlan plan = planner.createPlan(LocalTajoTestingUtility.createDummyContext(conf), expr);
     LogicalNode rootNode = optimizer.optimize(plan);
 
-    TmpPlanner phyPlanner = new TmpPlanner(conf, sm);
+    TmpPlanner phyPlanner = new TmpPlanner(conf);
     PhysicalExec exec = phyPlanner.createPlan(ctx, rootNode);
 
     int tupleCount = this.randomValues.get(rndKey);
@@ -189,8 +191,8 @@ public class TestBSTIndexExec {
   }
 
   private class TmpPlanner extends PhysicalPlannerImpl {
-    public TmpPlanner(TajoConf conf, AbstractStorageManager sm) {
-      super(conf, sm);
+    public TmpPlanner(TajoConf conf) {
+      super(conf);
     }
 
     @Override
@@ -204,7 +206,7 @@ public class TestBSTIndexExec {
       
       Datum[] datum = new Datum[]{DatumFactory.createInt4(rndKey)};
 
-      return new BSTIndexScanExec(ctx, sm, scanNode, fragments.get(0), idxPath, idxSchema, comp , datum);
+      return new BSTIndexScanExec(ctx, scanNode, fragments.get(0), idxPath, idxSchema, comp , datum);
 
     }
   }

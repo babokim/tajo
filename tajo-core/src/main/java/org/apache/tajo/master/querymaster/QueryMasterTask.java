@@ -57,7 +57,7 @@ import org.apache.tajo.master.session.Session;
 import org.apache.tajo.rpc.CallFuture;
 import org.apache.tajo.rpc.NettyClientBase;
 import org.apache.tajo.rpc.RpcConnectionPool;
-import org.apache.tajo.storage.AbstractStorageManager;
+import org.apache.tajo.storage.FileStorageHandler;
 import org.apache.tajo.util.HAServiceUtil;
 import org.apache.tajo.util.metrics.TajoMetrics;
 import org.apache.tajo.util.metrics.reporter.MetricsConsoleReporter;
@@ -554,10 +554,6 @@ public class QueryMasterTask extends CompositeService {
 
     public QueryId getQueryId() {
       return queryId;
-    }
-
-    public AbstractStorageManager getStorageManager() {
-      return queryMasterContext.getStorageManager();
     }
 
     public Path getStagingDir() {

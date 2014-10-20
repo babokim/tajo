@@ -43,7 +43,7 @@ import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.master.TajoMaster;
 import org.apache.tajo.storage.Appender;
-import org.apache.tajo.storage.StorageManagerFactory;
+import org.apache.tajo.storage.TajoStorageHandler;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.storage.VTuple;
 import org.apache.tajo.util.CommonTestingUtil;
@@ -140,8 +140,7 @@ public class TestBroadcastJoinPlan {
         contentsData += j;
       }
     }
-    Appender appender = StorageManagerFactory.getStorageManager(conf).getAppender(tableMeta, schema,
-        dataPath);
+    Appender appender = TajoStorageHandler.getFileStorageHandler(conf).getAppender(tableMeta, schema, dataPath);
     appender.init();
     Tuple tuple = new VTuple(schema.size());
     int writtenSize = 0;

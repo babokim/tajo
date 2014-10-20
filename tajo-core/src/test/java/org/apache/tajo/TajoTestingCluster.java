@@ -45,6 +45,7 @@ import org.apache.tajo.master.querymaster.QueryMasterTask;
 import org.apache.tajo.master.querymaster.SubQuery;
 import org.apache.tajo.master.querymaster.SubQueryState;
 import org.apache.tajo.master.rm.TajoWorkerResourceManager;
+import org.apache.tajo.storage.TajoStorageHandler;
 import org.apache.tajo.util.CommonTestingUtil;
 import org.apache.tajo.util.KeyValueSet;
 import org.apache.tajo.util.NetUtils;
@@ -615,8 +616,7 @@ public class TajoTestingCluster {
     TajoTestingCluster util = TpchTestBase.getInstance().getTestingCluster();
 
     FileSystem fs = util.getDefaultFileSystem();
-    Path rootDir = util.getMaster().
-        getStorageManager().getWarehouseDir();
+    Path rootDir = TajoStorageHandler.getFileStorageHandler(util.getConfiguration()).getWarehouseDir();
     fs.mkdirs(rootDir);
     for (int i = 0; i < names.length; i++) {
       createTable(names[i], schemas[i], tableOption, tables[i]);
@@ -668,8 +668,7 @@ public class TajoTestingCluster {
     TajoClient client = new TajoClient(conf);
     try {
       FileSystem fs = util.getDefaultFileSystem();
-      Path rootDir = util.getMaster().
-          getStorageManager().getWarehouseDir();
+      Path rootDir = TajoStorageHandler.getFileStorageHandler(util.getConfiguration()).getWarehouseDir();
       if (!fs.exists(rootDir)) {
         fs.mkdirs(rootDir);
       }

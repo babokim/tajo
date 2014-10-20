@@ -17,32 +17,37 @@ package org.apache.tajo.storage; /**
  */
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.Schema;
 import org.apache.tajo.catalog.TableMeta;
+import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.storage.fragment.FileFragment;
+import org.apache.tajo.storage.fragment.Fragment;
 
 import java.io.IOException;
 
-public class NullScanner extends FileScanner {
-  public NullScanner(Configuration conf, Schema schema, TableMeta meta, FileFragment fragment) {
+public class NullScanner extends AbstractScanner {
+  public NullScanner(Configuration conf, Schema schema, TableMeta meta, Fragment fragment) {
     super(conf, schema, meta, fragment);
   }
 
   @Override
-  public Tuple next() throws IOException {
-    progress = 1.0f;
+  public void init() throws IOException {
+    super.init();
+    this.progress = 1.0f;
+  }
 
+  @Override
+  public Tuple next() throws IOException {
     return null;
   }
 
   @Override
   public void reset() throws IOException {
-    progress = 0.0f;
   }
 
   @Override
   public void close() throws IOException {
-    progress = 0.0f;
   }
 
   @Override

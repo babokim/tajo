@@ -548,6 +548,9 @@ public class TestInsertQuery extends QueryTestCaseBase {
           "(l_orderkey int4, l_shipdate_function text) using parquet partition by column (l_shipdate text)").close();
 
       CatalogService catalog = testingCluster.getMaster().getCatalog();
+
+      TableDesc t = catalog.getTableDesc(getCurrentDatabase(), "parquet_table");
+
       assertTrue(catalog.existsTable(getCurrentDatabase(), "parquet_table"));
 
       executeString(

@@ -37,10 +37,8 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.exception.*;
 import org.apache.tajo.catalog.partition.PartitionMethodDesc;
 import org.apache.tajo.catalog.proto.CatalogProtos;
-import org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.catalog.statistics.TableStats;
-import org.apache.tajo.client.TajoClient;
 import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.datum.DatumFactory;
@@ -51,7 +49,6 @@ import org.apache.tajo.engine.parser.SQLAnalyzer;
 import org.apache.tajo.engine.planner.*;
 import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.planner.physical.EvalExprExec;
-import org.apache.tajo.engine.planner.physical.SeqScanExec;
 import org.apache.tajo.engine.planner.physical.StoreTableExec;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.ClientProtos;
@@ -80,7 +77,6 @@ public class GlobalEngine extends AbstractService {
   private final static Log LOG = LogFactory.getLog(GlobalEngine.class);
 
   private final MasterContext context;
-  private final AbstractStorageManager sm;
 
   private SQLAnalyzer analyzer;
   private CatalogService catalog;
@@ -94,7 +90,6 @@ public class GlobalEngine extends AbstractService {
     super(GlobalEngine.class.getName());
     this.context = context;
     this.catalog = context.getCatalog();
-    this.sm = context.getStorageManager();
   }
 
   public void start() {
@@ -728,7 +723,7 @@ public class GlobalEngine extends AbstractService {
       desc.setPartitionMethod(partitionDesc);
     }
 
-    sm.getStorageHandler(storeType).createTable(context.getConf(), sm, desc);
+    TajoStorageHandler.getStorageHandler(queryContext.getConf(), storeType).createTable(desc);
 
     if (catalog.createTable(desc)) {
       LOG.info("Table " + desc.getName() + " is created (" + desc.getStats().getNumBytes() + ")");
@@ -826,9 +821,10 @@ public class GlobalEngine extends AbstractService {
     TableDesc tableDesc = catalog.getTableDesc(qualifiedName);
     catalog.dropTable(qualifiedName);
 
-    if (tableDesc.isExternal() && purge) {
+    if (purge) {
       try {
-        sm.getStorageHandler(tableDesc.getMeta().getStoreType()).purgeTable(context.getConf(), tableDesc);
+        TajoStorageHandler.getStorageHandler(queryContext.getConf(), tableDesc.getMeta().getStoreType())
+            .purgeTable(tableDesc);
       } catch (IOException e) {
         LOG.warn("Can't purge table: " + e.getMessage(), e);
       }

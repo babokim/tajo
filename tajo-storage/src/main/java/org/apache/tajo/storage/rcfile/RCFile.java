@@ -39,6 +39,7 @@ import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.NullDatum;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.fragment.FileFragment;
+import org.apache.tajo.storage.fragment.Fragment;
 
 import java.io.Closeable;
 import java.io.*;
@@ -1176,12 +1177,12 @@ public class RCFile {
     private SerializerDeserializer serde;
 
     public RCFileScanner(Configuration conf, final Schema schema, final TableMeta meta,
-                         final FileFragment fragment) throws IOException {
+                         final Fragment fragment) throws IOException {
       super(conf, schema, meta, fragment);
       conf.setInt("io.file.buffer.size", 4096); //TODO remove
 
-      startOffset = fragment.getStartKey();
-      endOffset = startOffset + fragment.getEndKey();
+      startOffset = this.fragment.getStartKey();
+      endOffset = startOffset + this.fragment.getEndKey();
       start = 0;
     }
 

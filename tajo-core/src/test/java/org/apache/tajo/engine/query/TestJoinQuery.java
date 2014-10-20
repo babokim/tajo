@@ -89,10 +89,10 @@ public class TestJoinQuery extends QueryTestCaseBase {
   @Parameters
   public static Collection<Object[]> generateParameters() {
     return Arrays.asList(new Object[][]{
-        {"Hash_NoBroadcast"},
+//        {"Hash_NoBroadcast"},
         {"Sort_NoBroadcast"},
-        {"Hash"},
-        {"Sort"},
+//        {"Hash"},
+//        {"Sort"},
     });
   }
 

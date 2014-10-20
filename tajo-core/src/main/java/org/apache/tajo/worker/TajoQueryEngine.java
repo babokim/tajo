@@ -24,19 +24,15 @@ import org.apache.tajo.engine.planner.PhysicalPlannerImpl;
 import org.apache.tajo.engine.planner.logical.LogicalNode;
 import org.apache.tajo.engine.planner.physical.PhysicalExec;
 import org.apache.tajo.exception.InternalException;
-import org.apache.tajo.storage.AbstractStorageManager;
-import org.apache.tajo.storage.StorageManagerFactory;
 
 import java.io.IOException;
 
 public class TajoQueryEngine {
 
-  private final AbstractStorageManager storageManager;
   private final PhysicalPlanner phyPlanner;
 
   public TajoQueryEngine(TajoConf conf) throws IOException {
-    this.storageManager = StorageManagerFactory.getStorageManager(conf);
-    this.phyPlanner = new PhysicalPlannerImpl(conf, storageManager);
+    this.phyPlanner = new PhysicalPlannerImpl(conf);
   }
   
   public PhysicalExec createPlan(TaskAttemptContext ctx, LogicalNode plan)

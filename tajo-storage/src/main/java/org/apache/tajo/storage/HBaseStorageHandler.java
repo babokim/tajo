@@ -18,17 +18,23 @@
 
 package org.apache.tajo.storage;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.tajo.TajoConstants;
 import org.apache.tajo.catalog.Column;
 import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.catalog.TableMeta;
 import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.storage.fragment.Fragment;
+import org.apache.tajo.storage.fragment.HBaseFragment;
+import org.apache.tajo.storage.hbase.RowKeyMapping;
 import org.apache.tajo.util.Bytes;
 
 import java.io.BufferedReader;
@@ -36,16 +42,23 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.*;
 
-public class HBaseStoreHandler implements TajoStorageHandler {
+public class HBaseStorageHandler extends TajoStorageHandler {
+  private final Log LOG = LogFactory.getLog(HBaseStorageHandler.class);
+
   public static final String META_TABLE_KEY = "table";
   public static final String META_COLUMNS_KEY = "columns";
   public static final String META_SPLIT_ROW_KEYS_KEY = "hbase.split.rowkeys";
   public static final String META_SPLIT_ROW_KEYS_FILE_KEY = "hbase.split.rowkeys.file";
   public static final String META_ZK_QUORUM_KEY = "hbase.zookeeper.quorum";
-  public static final String ROWKEY_COLUMN_MAPPING = ":key";
+  public static final String ROWKEY_COLUMN_MAPPING = "key";
+  public static final String META_ROWKEY_DELIMITER = "hbase.rowkey.delimiter";
 
   @Override
-  public void createTable(TajoConf conf, AbstractStorageManager sm, TableDesc tableDesc) throws IOException {
+  public void handlerInit() throws IOException {
+  }
+
+  @Override
+  public void createTable(TableDesc tableDesc) throws IOException {
     TableMeta tableMeta = tableDesc.getMeta();
 
     String hbaseTableName = tableMeta.getOption(META_TABLE_KEY, "");
@@ -58,7 +71,7 @@ public class HBaseStoreHandler implements TajoStorageHandler {
     if (columnMapping != null && columnMapping.split(",").length > tableDesc.getSchema().size()) {
       throw new IOException("Columns property has more entry than Tajo table columns");
     }
-    HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(tableMeta));
+    HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(tajoConf, tableMeta));
 
     if (tableDesc.isExternal()) {
       // If tajo table is external table, only check validation.
@@ -92,7 +105,7 @@ public class HBaseStoreHandler implements TajoStorageHandler {
       // Creating hbase table
       HTableDescriptor hTableDescriptor = parseHTableDescriptor(tableDesc);
 
-      byte[][] splitKeys = getSplitKeys(conf, tableMeta);
+      byte[][] splitKeys = getSplitKeys(tajoConf, tableMeta);
       if (splitKeys == null) {
         hAdmin.createTable(hTableDescriptor);
       } else {
@@ -172,25 +185,27 @@ public class HBaseStoreHandler implements TajoStorageHandler {
     }
 
     for (String eachToken: columnMapping.split(",")) {
-      if (eachToken.trim().equals(ROWKEY_COLUMN_MAPPING)) {
+      String[] cfTokens = eachToken.trim().split(":");
+      if (cfTokens.length == 2 && cfTokens[1] != null && getRowKeyMapping(cfTokens[0], cfTokens[1].trim()) != null) {
+        // rowkey
         continue;
       }
-      String[] cfTokens = eachToken.trim().split(":");
       if (!columnFamilies.contains(cfTokens[0])) {
-        columnFamilies.add(cfTokens[0]);
+        String[] binaryTokens = cfTokens[0].split("#");
+        columnFamilies.add(binaryTokens[0]);
       }
     }
 
     return columnFamilies;
   }
 
-  public static Configuration getHBaseConfiguration(TableMeta tableMeta) throws IOException {
+  public static Configuration getHBaseConfiguration(TajoConf tajoConf, TableMeta tableMeta) throws IOException {
     String zkQuorum = tableMeta.getOption(META_ZK_QUORUM_KEY, "");
     if (zkQuorum == null || zkQuorum.trim().isEmpty()) {
       throw new IOException("HBase mapped table is required a '" + META_ZK_QUORUM_KEY + "' attribute.");
     }
 
-    Configuration hbaseConf = HBaseConfiguration.create();
+    Configuration hbaseConf = (tajoConf == null) ? HBaseConfiguration.create() : HBaseConfiguration.create(tajoConf);
     hbaseConf.set(HConstants.ZOOKEEPER_QUORUM, zkQuorum);
 
     for (Map.Entry<String, String> eachOption: tableMeta.getOptions().getAllKeyValus().entrySet()) {
@@ -233,11 +248,84 @@ public class HBaseStoreHandler implements TajoStorageHandler {
   }
 
   @Override
-  public void purgeTable(TajoConf tajoConf, TableDesc tableDesc) throws IOException {
-    HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(tableDesc.getMeta()));
+  public void purgeTable(TableDesc tableDesc) throws IOException {
+    HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(tajoConf, tableDesc.getMeta()));
 
     HTableDescriptor hTableDesc = parseHTableDescriptor(tableDesc);
     hAdmin.disableTable(hTableDesc.getName());
     hAdmin.deleteTable(hTableDesc.getName());
+  }
+
+  @Override
+  public List<Fragment> getFragments(String fragmentId, TableDesc tableDesc) throws IOException {
+    Configuration conf = getHBaseConfiguration(tajoConf, tableDesc.getMeta());
+    HTable htable = new HTable(conf, tableDesc.getMeta().getOption(META_TABLE_KEY));
+
+    org.apache.hadoop.hbase.util.Pair<byte[][], byte[][]> keys = htable.getStartEndKeys();
+    if (keys == null || keys.getFirst() == null || keys.getFirst().length == 0) {
+      HRegionLocation regLoc = htable.getRegionLocation(HConstants.EMPTY_BYTE_ARRAY, false);
+      if (null == regLoc) {
+        throw new IOException("Expecting at least one region.");
+      }
+      List<Fragment> fragments = new ArrayList<Fragment>(1);
+      Fragment fragment = new HBaseFragment(fragmentId, htable.getName().getNameAsString(),
+          HConstants.EMPTY_BYTE_ARRAY, HConstants.EMPTY_BYTE_ARRAY, regLoc.getHostname());
+      fragments.add(fragment);
+      return fragments;
+    }
+
+    List<Fragment> fragments = new ArrayList<Fragment>(keys.getFirst().length);
+    for (int i = 0; i < keys.getFirst().length; i++) {
+      HRegionLocation location = htable.getRegionLocation(keys.getFirst()[i], false);
+
+      // TODO set startRow, stopRow with a filter.
+      byte[] startRow = HConstants.EMPTY_START_ROW;
+      byte[] stopRow = HConstants.EMPTY_END_ROW;
+
+      // determine if the given start an stop key fall into the region
+      if ((startRow.length == 0 || keys.getSecond()[i].length == 0 ||
+          org.apache.hadoop.hbase.util.Bytes.compareTo(startRow, keys.getSecond()[i]) < 0) &&
+          (stopRow.length == 0 ||
+              org.apache.hadoop.hbase.util.Bytes.compareTo(stopRow, keys.getFirst()[i]) > 0)) {
+        byte[] fragmentStart = startRow.length == 0 ||
+            org.apache.hadoop.hbase.util.Bytes.compareTo(keys.getFirst()[i], startRow) >= 0 ?
+            keys.getFirst()[i] : startRow;
+        byte[] fragmentStop = (stopRow.length == 0 ||
+            org.apache.hadoop.hbase.util.Bytes.compareTo(keys.getSecond()[i], stopRow) <= 0) &&
+            keys.getSecond()[i].length > 0 ?
+            keys.getSecond()[i] : stopRow;
+
+        Fragment fragment = new HBaseFragment(fragmentId, htable.getName().getNameAsString(),
+            fragmentStart, fragmentStop, location.getHostname());
+        fragments.add(fragment);
+        if (LOG.isDebugEnabled()) {
+          LOG.debug("getFragments: fragment -> " + i + " -> " + fragment);
+        }
+      }
+    }
+
+    return fragments;
+  }
+
+  public static RowKeyMapping getRowKeyMapping(String cfName, String columnName) {
+    if (columnName == null || columnName.isEmpty()) {
+      return null;
+    }
+
+    String[] tokens = columnName.split("#");
+    if (!tokens[0].equalsIgnoreCase(ROWKEY_COLUMN_MAPPING)) {
+      return null;
+    }
+
+    RowKeyMapping rowKeyMapping = new RowKeyMapping();
+
+    if (tokens.length == 2 && "b".equals(tokens[1])) {
+      rowKeyMapping.setBinary(true);
+    }
+
+    if (cfName != null && !cfName.isEmpty()) {
+      rowKeyMapping.setKeyFieldIndex(Integer.parseInt(cfName));
+    }
+    return rowKeyMapping;
   }
 }

@@ -19,6 +19,7 @@
 package org.apache.tajo.storage;
 
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -26,10 +27,14 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.tajo.TajoConstants;
+import org.apache.tajo.catalog.CatalogUtil;
 import org.apache.tajo.catalog.Schema;
+import org.apache.tajo.catalog.TableDesc;
 import org.apache.tajo.catalog.TableMeta;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
+import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.Fragment;
@@ -45,43 +50,19 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 
-public abstract class AbstractStorageManager {
-  private final Log LOG = LogFactory.getLog(AbstractStorageManager.class);
+public class FileStorageHandler extends TajoStorageHandler {
+  private final Log LOG = LogFactory.getLog(FileStorageHandler.class);
 
-  protected final TajoConf conf;
-  protected final FileSystem fs;
-  protected final Path tableBaseDir;
-  protected final boolean blocksMetadataEnabled;
+  protected FileSystem fs;
+  protected Path tableBaseDir;
+  protected boolean blocksMetadataEnabled;
   private static final HdfsVolumeId zeroVolumeId = new HdfsVolumeId(Bytes.toBytes(0));
 
-  /**
-   * Cache of scanner handlers for each storage type.
-   */
-  protected static final Map<String, Class<? extends Scanner>> SCANNER_HANDLER_CACHE
-      = new ConcurrentHashMap<String, Class<? extends Scanner>>();
-
-  /**
-   * Cache of appender handlers for each storage type.
-   */
-  protected static final Map<String, Class<? extends FileAppender>> APPENDER_HANDLER_CACHE
-      = new ConcurrentHashMap<String, Class<? extends FileAppender>>();
-
-  /**
-   * Cache of constructors for each class. Pins the classes so they
-   * can't be garbage collected until ReflectionUtils can be collected.
-   */
-  private static final Map<Class<?>, Constructor<?>> CONSTRUCTOR_CACHE =
-      new ConcurrentHashMap<Class<?>, Constructor<?>>();
-
-  public abstract Class<? extends Scanner> getScannerClass(CatalogProtos.StoreType storeType) throws IOException;
-
-  public abstract Scanner getScanner(TableMeta meta, Schema schema, Fragment fragment, Schema target) throws IOException;
-
-  protected AbstractStorageManager(TajoConf conf) throws IOException {
-    this.conf = conf;
-    this.tableBaseDir = TajoConf.getWarehouseDir(conf);
-    this.fs = tableBaseDir.getFileSystem(conf);
-    this.blocksMetadataEnabled = conf.getBoolean(DFSConfigKeys.DFS_HDFS_BLOCKS_METADATA_ENABLED,
+  @Override
+  protected void handlerInit() throws IOException {
+    this.tableBaseDir = TajoConf.getWarehouseDir(tajoConf);
+    this.fs = tableBaseDir.getFileSystem(tajoConf);
+    this.blocksMetadataEnabled = tajoConf.getBoolean(DFSConfigKeys.DFS_HDFS_BLOCKS_METADATA_ENABLED,
         DFSConfigKeys.DFS_HDFS_BLOCKS_METADATA_ENABLED_DEFAULT);
     if (!this.blocksMetadataEnabled)
       LOG.warn("does not support block metadata. ('dfs.datanode.hdfs-blocks-metadata.enabled')");
@@ -89,7 +70,7 @@ public abstract class AbstractStorageManager {
 
   public Scanner getFileScanner(TableMeta meta, Schema schema, Path path)
       throws IOException {
-    FileSystem fs = path.getFileSystem(conf);
+    FileSystem fs = path.getFileSystem(tajoConf);
     FileStatus status = fs.getFileStatus(path);
     return getFileScanner(meta, schema, path, status);
   }
@@ -98,18 +79,6 @@ public abstract class AbstractStorageManager {
       throws IOException {
     FileFragment fragment = new FileFragment(path.getName(), path, 0, status.getLen());
     return getScanner(meta, schema, fragment);
-  }
-
-  public Scanner getScanner(TableMeta meta, Schema schema, FragmentProto fragment) throws IOException {
-    return getScanner(meta, schema, FragmentConvertor.convert(conf, meta.getStoreType(), fragment), schema);
-  }
-
-  public Scanner getScanner(TableMeta meta, Schema schema, FragmentProto fragment, Schema target) throws IOException {
-    return getScanner(meta, schema, FragmentConvertor.convert(conf, meta.getStoreType(), fragment), target);
-  }
-
-  public Scanner getScanner(TableMeta meta, Schema schema, Fragment fragment) throws IOException {
-    return getScanner(meta, schema, fragment, schema);
   }
 
   public FileSystem getFileSystem() {
@@ -121,12 +90,12 @@ public abstract class AbstractStorageManager {
   }
 
   public void delete(Path tablePath) throws IOException {
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
     fs.delete(tablePath, true);
   }
 
   public boolean exists(Path path) throws IOException {
-    FileSystem fileSystem = path.getFileSystem(conf);
+    FileSystem fileSystem = path.getFileSystem(tajoConf);
     return fileSystem.exists(path);
   }
 
@@ -137,7 +106,7 @@ public abstract class AbstractStorageManager {
    * @throws IOException
    */
   public void deleteData(Path path) throws IOException {
-    FileSystem fileSystem = path.getFileSystem(conf);
+    FileSystem fileSystem = path.getFileSystem(tajoConf);
     FileStatus[] fileLists = fileSystem.listStatus(path);
     for (FileStatus status : fileLists) {
       fileSystem.delete(status.getPath(), true);
@@ -148,35 +117,10 @@ public abstract class AbstractStorageManager {
     return new Path(tableBaseDir, tableName);
   }
 
-  public Appender getAppender(TableMeta meta, Schema schema, Path path)
-      throws IOException {
-    Appender appender;
-
-    Class<? extends FileAppender> appenderClass;
-
-    String handlerName = meta.getStoreType().name().toLowerCase();
-    appenderClass = APPENDER_HANDLER_CACHE.get(handlerName);
-    if (appenderClass == null) {
-      appenderClass = conf.getClass(
-          String.format("tajo.storage.appender-handler.%s.class",
-              meta.getStoreType().name().toLowerCase()), null,
-          FileAppender.class);
-      APPENDER_HANDLER_CACHE.put(handlerName, appenderClass);
-    }
-
-    if (appenderClass == null) {
-      throw new IOException("Unknown Storage Type: " + meta.getStoreType());
-    }
-
-    appender = newAppenderInstance(appenderClass, conf, meta, schema, path);
-
-    return appender;
-  }
-
   public TableMeta getTableMeta(Path tablePath) throws IOException {
     TableMeta meta;
 
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
     Path tableMetaPath = new Path(tablePath, ".meta");
     if (!fs.exists(tableMetaPath)) {
       throw new FileNotFoundException(".meta file not found in " + tablePath.toString());
@@ -202,7 +146,7 @@ public abstract class AbstractStorageManager {
   }
 
   public FileFragment[] splitBroadcastTable(Path tablePath) throws IOException {
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
     List<FileFragment> listTablets = new ArrayList<FileFragment>();
     FileFragment tablet;
 
@@ -219,7 +163,7 @@ public abstract class AbstractStorageManager {
   }
 
   public FileFragment[] split(Path tablePath) throws IOException {
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
     return split(tablePath.getName(), tablePath, fs.getDefaultBlockSize());
   }
 
@@ -229,7 +173,7 @@ public abstract class AbstractStorageManager {
 
   private FileFragment[] split(String tableName, Path tablePath, long size)
       throws IOException {
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
 
     long defaultBlockSize = size;
     List<FileFragment> listTablets = new ArrayList<FileFragment>();
@@ -291,7 +235,7 @@ public abstract class AbstractStorageManager {
   }
 
   public long calculateSize(Path tablePath) throws IOException {
-    FileSystem fs = tablePath.getFileSystem(conf);
+    FileSystem fs = tablePath.getFileSystem(tajoConf);
     long totalSize = 0;
 
     if (fs.exists(tablePath)) {
@@ -360,7 +304,7 @@ public abstract class AbstractStorageManager {
     for (int i = 0; i < dirs.length; ++i) {
       Path p = dirs[i];
 
-      FileSystem fs = p.getFileSystem(conf);
+      FileSystem fs = p.getFileSystem(tajoConf);
       FileStatus[] matches = fs.globStatus(p, inputFilter);
       if (matches == null) {
         errors.add(new IOException("Input path does not exist: " + p));
@@ -482,7 +426,7 @@ public abstract class AbstractStorageManager {
    * @return the minimum number of bytes that can be in a split
    */
   public long getMinSplitSize() {
-    return conf.getLongVar(TajoConf.ConfVars.MINIMUM_SPLIT_SIZE);
+    return tajoConf.getLongVar(TajoConf.ConfVars.MINIMUM_SPLIT_SIZE);
   }
 
   /**
@@ -524,21 +468,27 @@ public abstract class AbstractStorageManager {
 
     return volumeMap;
   }
+
+//  @Override
+//  public List<Fragment> getFragments(String fragmentId, TableDesc tableDesc) throws IOException {
+//    return getSplits(fragmentId, tableDesc.getMeta(), tableDesc.getSchema(), tableDesc.getPath());
+//  }
+
   /**
    * Generate the list of files and make them into FileSplits.
    *
    * @throws IOException
    */
-  public List<FileFragment> getSplits(String tableName, TableMeta meta, Schema schema, Path... inputs)
+  public List<Fragment> getSplits(String fragmentId, TableMeta meta, Schema schema, Path... inputs)
       throws IOException {
     // generate splits'
 
-    List<FileFragment> splits = Lists.newArrayList();
-    List<FileFragment> volumeSplits = Lists.newArrayList();
+    List<Fragment> splits = Lists.newArrayList();
+    List<Fragment> volumeSplits = Lists.newArrayList();
     List<BlockLocation> blockLocations = Lists.newArrayList();
 
     for (Path p : inputs) {
-      FileSystem fs = p.getFileSystem(conf);
+      FileSystem fs = p.getFileSystem(tajoConf);
       ArrayList<FileStatus> files = Lists.newArrayList();
       if (fs.isFile(p)) {
         files.addAll(Lists.newArrayList(fs.getFileStatus(p)));
@@ -558,7 +508,7 @@ public abstract class AbstractStorageManager {
 
             if (splittable) {
               for (BlockLocation blockLocation : blkLocations) {
-                volumeSplits.add(makeSplit(tableName, path, blockLocation));
+                volumeSplits.add(makeSplit(fragmentId, path, blockLocation));
               }
               blockLocations.addAll(Arrays.asList(blkLocations));
 
@@ -567,10 +517,10 @@ public abstract class AbstractStorageManager {
               if (blockSize >= length) {
                 blockLocations.addAll(Arrays.asList(blkLocations));
                 for (BlockLocation blockLocation : blkLocations) {
-                  volumeSplits.add(makeSplit(tableName, path, blockLocation));
+                  volumeSplits.add(makeSplit(fragmentId, path, blockLocation));
                 }
               } else {
-                splits.add(makeNonSplit(tableName, path, 0, length, blkLocations));
+                splits.add(makeNonSplit(fragmentId, path, 0, length, blkLocations));
               }
             }
 
@@ -586,22 +536,22 @@ public abstract class AbstractStorageManager {
               // for s3
               while (((double) bytesRemaining) / splitSize > SPLIT_SLOP) {
                 int blkIndex = getBlockIndex(blkLocations, length - bytesRemaining);
-                splits.add(makeSplit(tableName, path, length - bytesRemaining, splitSize,
+                splits.add(makeSplit(fragmentId, path, length - bytesRemaining, splitSize,
                     blkLocations[blkIndex].getHosts()));
                 bytesRemaining -= splitSize;
               }
               if (bytesRemaining > 0) {
                 int blkIndex = getBlockIndex(blkLocations, length - bytesRemaining);
-                splits.add(makeSplit(tableName, path, length - bytesRemaining, bytesRemaining,
+                splits.add(makeSplit(fragmentId, path, length - bytesRemaining, bytesRemaining,
                     blkLocations[blkIndex].getHosts()));
               }
             } else { // Non splittable
-              splits.add(makeNonSplit(tableName, path, 0, length, blkLocations));
+              splits.add(makeNonSplit(fragmentId, path, 0, length, blkLocations));
             }
           }
         } else {
           //for zero length files
-          splits.add(makeSplit(tableName, path, 0, length));
+          splits.add(makeSplit(fragmentId, path, 0, length));
         }
       }
       if(LOG.isDebugEnabled()){
@@ -616,7 +566,7 @@ public abstract class AbstractStorageManager {
     return splits;
   }
 
-  private void setVolumeMeta(List<FileFragment> splits, final List<BlockLocation> blockLocations)
+  private void setVolumeMeta(List<Fragment> splits, final List<BlockLocation> blockLocations)
       throws IOException {
 
     int locationSize = blockLocations.size();
@@ -631,11 +581,11 @@ public abstract class AbstractStorageManager {
       return;
     }
 
-    DistributedFileSystem fs = (DistributedFileSystem)DistributedFileSystem.get(conf);
-    int lsLimit = conf.getInt(DFSConfigKeys.DFS_LIST_LIMIT, DFSConfigKeys.DFS_LIST_LIMIT_DEFAULT);
+    DistributedFileSystem fs = (DistributedFileSystem)DistributedFileSystem.get(tajoConf);
+    int lsLimit = tajoConf.getInt(DFSConfigKeys.DFS_LIST_LIMIT, DFSConfigKeys.DFS_LIST_LIMIT_DEFAULT);
     int blockLocationIdx = 0;
 
-    Iterator<FileFragment> iter = splits.iterator();
+    Iterator<Fragment> iter = splits.iterator();
     while (locationSize > blockLocationIdx) {
 
       int subSize = Math.min(locationSize - blockLocationIdx, lsLimit);
@@ -644,7 +594,7 @@ public abstract class AbstractStorageManager {
       BlockStorageLocation[] blockStorageLocations = fs.getFileBlockStorageLocations(locations);
 
       for (BlockStorageLocation blockStorageLocation : blockStorageLocations) {
-        iter.next().setDiskIds(getDiskIds(blockStorageLocation.getVolumeIds()));
+        ((FileFragment)iter.next()).setDiskIds(getDiskIds(blockStorageLocation.getVolumeIds()));
         blockLocationIdx++;
       }
     }
@@ -672,68 +622,85 @@ public abstract class AbstractStorageManager {
     }
   }
 
-  private static final Class<?>[] DEFAULT_SCANNER_PARAMS = {
-      Configuration.class,
-      Schema.class,
-      TableMeta.class,
-      FileFragment.class
-  };
+  @Override
+  public void createTable(TableDesc tableDesc) throws IOException {
+    if (!tableDesc.isExternal()) {
+      String [] splitted = CatalogUtil.splitFQTableName(tableDesc.getName());
+      String databaseName = splitted[0];
+      String simpleTableName = splitted[1];
 
-  private static final Class<?>[] DEFAULT_APPENDER_PARAMS = {
-      Configuration.class,
-      Schema.class,
-      TableMeta.class,
-      Path.class
-  };
-
-  /**
-   * create a scanner instance.
-   */
-  public static <T> T newScannerInstance(Class<T> theClass, Configuration conf, Schema schema, TableMeta meta,
-                                         Fragment fragment) {
-    T result;
-    try {
-      Constructor<T> meth = (Constructor<T>) CONSTRUCTOR_CACHE.get(theClass);
-      if (meth == null) {
-        meth = theClass.getDeclaredConstructor(DEFAULT_SCANNER_PARAMS);
-        meth.setAccessible(true);
-        CONSTRUCTOR_CACHE.put(theClass, meth);
-      }
-      result = meth.newInstance(new Object[]{conf, schema, meta, fragment});
-    } catch (Exception e) {
-      throw new RuntimeException(e);
+      // create a table directory (i.e., ${WAREHOUSE_DIR}/${DATABASE_NAME}/${TABLE_NAME} )
+      Path tablePath = StorageUtil.concatPath(tableBaseDir, databaseName, simpleTableName);
+      tableDesc.setPath(tablePath);
+    } else {
+      Preconditions.checkState(tableDesc.getPath() != null, "ERROR: LOCATION must be given.");
     }
 
-    return result;
+    Path path = tableDesc.getPath();
+
+    FileSystem fs = path.getFileSystem(tajoConf);
+    TableStats stats = new TableStats();
+    if (tableDesc.isExternal()) {
+      if (!fs.exists(path)) {
+        LOG.error(path.toUri() + " does not exist");
+        throw new IOException("ERROR: " + path.toUri() + " does not exist");
+      }
+    } else {
+      fs.mkdirs(path);
+    }
+
+    long totalSize = 0;
+
+    try {
+      totalSize = calculateSize(path);
+    } catch (IOException e) {
+      LOG.warn("Cannot calculate the size of the relation", e);
+    }
+
+    stats.setNumBytes(totalSize);
+
+    if (tableDesc.isExternal()) { // if it is an external table, there is no way to know the exact row number without processing.
+      stats.setNumRows(TajoConstants.UNKNOWN_ROW_NUMBER);
+    }
+
+    tableDesc.setStats(stats);
+  }
+
+  @Override
+  public void purgeTable(TableDesc tableDesc) throws IOException {
+    try {
+      Path path = tableDesc.getPath();
+      FileSystem fs = path.getFileSystem(tajoConf);
+      LOG.info("Delete table data dir: " + path);
+      fs.delete(path, true);
+    } catch (IOException e) {
+      throw new InternalError(e.getMessage());
+    }
+  }
+
+  @Override
+  public List<Fragment> getFragments(String fragmentId, TableDesc tableDesc) throws IOException {
+    // Depending on scanner node's type, it creates fragments. If scan is for
+    // a partitioned table, It will creates lots fragments for all partitions.
+    // Otherwise, it creates at least one fragments for a table, which may
+    // span a number of blocks or possibly consists of a number of files.
+    if (tableDesc.hasPartition()) {
+      List<Path> partitionPaths = FileFragment.getInputPaths(tableDesc.getMeta());
+      return getFragmentsFromPartitionedTable(fragmentId, tableDesc, partitionPaths.toArray(new Path[]{}));
+    } else {
+      Path inputPath = tableDesc.getPath();
+      return getSplits(fragmentId, tableDesc.getMeta(), tableDesc.getSchema(), inputPath);
+    }
   }
 
   /**
-   * create a scanner instance.
+   * It creates a number of fragments for all partitions.
    */
-  public static <T> T newAppenderInstance(Class<T> theClass, Configuration conf, TableMeta meta, Schema schema,
-                                          Path path) {
-    T result;
-    try {
-      Constructor<T> meth = (Constructor<T>) CONSTRUCTOR_CACHE.get(theClass);
-      if (meth == null) {
-        meth = theClass.getDeclaredConstructor(DEFAULT_APPENDER_PARAMS);
-        meth.setAccessible(true);
-        CONSTRUCTOR_CACHE.put(theClass, meth);
-      }
-      result = meth.newInstance(new Object[]{conf, schema, meta, path});
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
-
-    return result;
-  }
-
-  public TajoStorageHandler getStorageHandler(StoreType storeType) {
-    switch (storeType) {
-      case HBASE:
-        return new HBaseStoreHandler();
-      default:
-        return new DiskBasedStoreHandler();
-    }
+  public List<Fragment> getFragmentsFromPartitionedTable(String fragmentId, TableDesc table, Path[] partitionPaths)
+      throws IOException {
+    List<Fragment> fragments = Lists.newArrayList();
+    fragments.addAll(
+        getSplits(fragmentId, table.getMeta(), table.getSchema(), partitionPaths));
+    return fragments;
   }
 }

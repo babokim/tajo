@@ -48,7 +48,6 @@ import org.apache.tajo.engine.planner.logical.InsertNode;
 import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.master.event.*;
-import org.apache.tajo.storage.AbstractStorageManager;
 import org.apache.tajo.storage.StorageConstants;
 import org.apache.tajo.storage.StorageUtil;
 import org.apache.tajo.util.TUtil;
@@ -70,7 +69,6 @@ public class Query implements EventHandler<QueryEvent> {
   private Map<ExecutionBlockId, SubQuery> subqueries;
   private final EventHandler eventHandler;
   private final MasterPlan plan;
-  private final AbstractStorageManager sm;
   QueryMasterTask.QueryMasterTaskContext context;
   private ExecutionBlockCursor cursor;
 
@@ -212,7 +210,6 @@ public class Query implements EventHandler<QueryEvent> {
     subqueries = Maps.newHashMap();
     this.eventHandler = eventHandler;
     this.plan = plan;
-    this.sm = context.getStorageManager();
     this.cursor = new ExecutionBlockCursor(plan, true);
 
     StringBuilder sb = new StringBuilder("\n=======================================================");
@@ -357,8 +354,7 @@ public class Query implements EventHandler<QueryEvent> {
     public void transition(Query query, QueryEvent queryEvent) {
 
       query.setStartTime();
-      SubQuery subQuery = new SubQuery(query.context, query.getPlan(),
-          query.getExecutionBlockCursor().nextBlock(), query.sm);
+      SubQuery subQuery = new SubQuery(query.context, query.getPlan(), query.getExecutionBlockCursor().nextBlock());
       subQuery.setPriority(query.priority--);
       query.addSubQuery(subQuery);
 
@@ -864,7 +860,7 @@ public class Query implements EventHandler<QueryEvent> {
     private void executeNextBlock(Query query) {
       ExecutionBlockCursor cursor = query.getExecutionBlockCursor();
       ExecutionBlock nextBlock = cursor.nextBlock();
-      SubQuery nextSubQuery = new SubQuery(query.context, query.getPlan(), nextBlock, query.sm);
+      SubQuery nextSubQuery = new SubQuery(query.context, query.getPlan(), nextBlock);
       nextSubQuery.setPriority(query.priority--);
       query.addSubQuery(nextSubQuery);
       nextSubQuery.handle(new SubQueryEvent(nextSubQuery.getId(), SubQueryEventType.SQ_INIT));

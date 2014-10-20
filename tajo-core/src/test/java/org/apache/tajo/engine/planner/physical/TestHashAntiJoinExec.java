@@ -26,6 +26,7 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.common.TajoDataTypes.Type;
 import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.DatumFactory;
 import org.apache.tajo.engine.parser.SQLAnalyzer;
@@ -57,7 +58,6 @@ public class TestHashAntiJoinExec {
   private SQLAnalyzer analyzer;
   private LogicalPlanner planner;
   private LogicalOptimizer optimizer;
-  private AbstractStorageManager sm;
   private Path testDir;
 
   private TableDesc employee;
@@ -71,8 +71,8 @@ public class TestHashAntiJoinExec {
     testDir = CommonTestingUtil.getTestDir(TEST_PATH);
     catalog.createTablespace(DEFAULT_TABLESPACE_NAME, testDir.toUri().toString());
     catalog.createDatabase(DEFAULT_DATABASE_NAME, DEFAULT_TABLESPACE_NAME);
-    conf = util.getConfiguration();
-    sm = StorageManagerFactory.getStorageManager(conf, testDir);
+    new TajoConf(conf = util.getConfiguration());
+    conf.setVar(ConfVars.WAREHOUSE_DIR, testDir.toUri().toString());
 
     Schema employeeSchema = new Schema();
     employeeSchema.addColumn("managerid", Type.INT4);
@@ -82,7 +82,7 @@ public class TestHashAntiJoinExec {
 
     TableMeta employeeMeta = CatalogUtil.newTableMeta(StoreType.CSV);
     Path employeePath = new Path(testDir, "employee.csv");
-    Appender appender = StorageManagerFactory.getStorageManager(conf).getAppender(employeeMeta, employeeSchema,
+    Appender appender = TajoStorageHandler.getFileStorageHandler(conf).getAppender(employeeMeta, employeeSchema,
         employeePath);
     appender.init();
     Tuple tuple = new VTuple(employeeSchema.size());
@@ -108,7 +108,7 @@ public class TestHashAntiJoinExec {
     peopleSchema.addColumn("age", Type.INT4);
     TableMeta peopleMeta = CatalogUtil.newTableMeta(StoreType.CSV);
     Path peoplePath = new Path(testDir, "people.csv");
-    appender = StorageManagerFactory.getStorageManager(conf).getAppender(peopleMeta, peopleSchema, peoplePath);
+    appender = TajoStorageHandler.getFileStorageHandler(conf).getAppender(peopleMeta, peopleSchema, peoplePath);
     appender.init();
     tuple = new VTuple(peopleSchema.size());
     for (int i = 1; i < 10; i += 2) {
@@ -146,10 +146,10 @@ public class TestHashAntiJoinExec {
 
   @Test
   public final void testHashAntiJoin() throws IOException, PlanningException {
-    FileFragment[] empFrags = StorageManager.splitNG(conf, "default.e", employee.getMeta(), employee.getPath(),
-        Integer.MAX_VALUE);
-    FileFragment[] peopleFrags = StorageManager.splitNG(conf, "default.p", people.getMeta(), people.getPath(),
-        Integer.MAX_VALUE);
+    FileFragment[] empFrags = TajoStorageHandler.getFileStorageHandler(conf)
+        .splitNG(conf, "default.e", employee.getMeta(), employee.getPath(), Integer.MAX_VALUE);
+    FileFragment[] peopleFrags = TajoStorageHandler.getFileStorageHandler(conf)
+        .splitNG(conf, "default.p", people.getMeta(), people.getPath(), Integer.MAX_VALUE);
 
     FileFragment[] merged = TUtil.concat(empFrags, peopleFrags);
 
@@ -162,7 +162,7 @@ public class TestHashAntiJoinExec {
     optimizer.optimize(plan);
     LogicalNode rootNode = plan.getRootBlock().getRoot();
 
-    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf, sm);
+    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf);
     PhysicalExec exec = phyPlanner.createPlan(ctx, rootNode);
 
     // replace an equal join with an hash anti join.

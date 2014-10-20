@@ -27,3 +27,11 @@ import "CatalogProtos.proto";
 message TupleComparatorProto {
   repeated TupleComparatorSpecProto compSpecs = 1;
 }
+
+message HBaseFragmentProto {
+  required string id = 1;
+  required string hbaseTableName = 2;
+  required bytes startRow = 3;
+  required bytes stopRow = 4;
+  optional string regionLocation = 5;
+}

@@ -256,12 +256,12 @@ public class TaskAttemptContext {
   public void updateAssignedFragments(String tableId, Fragment[] fragments) {
     fragmentMap.remove(tableId);
     for(Fragment t : fragments) {
-      if (fragmentMap.containsKey(t.getTableName())) {
-        fragmentMap.get(t.getTableName()).add(t.getProto());
+      if (fragmentMap.containsKey(t.getHbaseTableName())) {
+        fragmentMap.get(t.getHbaseTableName()).add(t.getProto());
       } else {
         List<FragmentProto> frags = new ArrayList<FragmentProto>();
         frags.add(t.getProto());
-        fragmentMap.put(t.getTableName(), frags);
+        fragmentMap.put(t.getHbaseTableName(), frags);
       }
     }
   }

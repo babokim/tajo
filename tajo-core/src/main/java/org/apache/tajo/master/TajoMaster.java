@@ -53,8 +53,6 @@ import org.apache.tajo.master.rm.TajoWorkerResourceManager;
 import org.apache.tajo.master.rm.WorkerResourceManager;
 import org.apache.tajo.master.session.SessionManager;
 import org.apache.tajo.rpc.RpcChannelFactory;
-import org.apache.tajo.storage.AbstractStorageManager;
-import org.apache.tajo.storage.StorageManagerFactory;
 import org.apache.tajo.util.*;
 import org.apache.tajo.util.metrics.TajoSystemMetrics;
 import org.apache.tajo.webapp.QueryExecutorServlet;
@@ -111,7 +109,6 @@ public class TajoMaster extends CompositeService {
 
   private CatalogServer catalogServer;
   private CatalogService catalog;
-  private AbstractStorageManager storeManager;
   private GlobalEngine globalEngine;
   private AsyncDispatcher dispatcher;
   private TajoMasterClientService tajoMasterClientService;
@@ -166,7 +163,6 @@ public class TajoMaster extends CompositeService {
 
       // check the system directory and create if they are not created.
       checkAndInitializeSystemDirectories();
-      this.storeManager = StorageManagerFactory.getStorageManager(systemConf);
 
       catalogServer = new CatalogServer(initBuiltinFunctions());
       addIfService(catalogServer);
@@ -476,10 +472,6 @@ public class TajoMaster extends CompositeService {
     return this.catalogServer;
   }
 
-  public AbstractStorageManager getStorageManager() {
-    return this.storeManager;
-  }
-
   public class MasterContext {
     private final TajoConf conf;
 
@@ -517,10 +509,6 @@ public class TajoMaster extends CompositeService {
 
     public GlobalEngine getGlobalEngine() {
       return globalEngine;
-    }
-
-    public AbstractStorageManager getStorageManager() {
-      return storeManager;
     }
 
     public TajoMasterService getTajoMasterService() {

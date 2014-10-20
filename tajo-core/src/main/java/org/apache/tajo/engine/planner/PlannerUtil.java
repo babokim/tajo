@@ -39,7 +39,7 @@ import org.apache.tajo.engine.eval.*;
 import org.apache.tajo.engine.exception.InvalidQueryException;
 import org.apache.tajo.engine.planner.logical.*;
 import org.apache.tajo.engine.utils.SchemaUtil;
-import org.apache.tajo.storage.StorageManager;
+import org.apache.tajo.storage.FileStorageHandler;
 import org.apache.tajo.storage.TupleComparator;
 import org.apache.tajo.storage.fragment.FileFragment;
 import org.apache.tajo.storage.fragment.FragmentConvertor;
@@ -856,7 +856,7 @@ public class PlannerUtil {
                                          int startFileIndex, int numResultFiles,
                                          AtomicInteger currentFileIndex) throws IOException {
     if (fs.isDirectory(path)) {
-      FileStatus[] files = fs.listStatus(path, StorageManager.hiddenFileFilter);
+      FileStatus[] files = fs.listStatus(path, FileStorageHandler.hiddenFileFilter);
       if (files != null && files.length > 0) {
         for (FileStatus eachFile : files) {
           if (result.size() >= numResultFiles) {

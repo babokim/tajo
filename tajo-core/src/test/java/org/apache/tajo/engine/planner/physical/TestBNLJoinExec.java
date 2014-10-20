@@ -26,6 +26,7 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.common.TajoDataTypes.Type;
 import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.DatumFactory;
 import org.apache.tajo.engine.parser.SQLAnalyzer;
@@ -59,7 +60,7 @@ public class TestBNLJoinExec {
   private CatalogService catalog;
   private SQLAnalyzer analyzer;
   private LogicalPlanner planner;
-  private AbstractStorageManager sm;
+  private FileStorageHandler sm;
   private Path testDir;
 
   private static int OUTER_TUPLE_NUM = 1000;
@@ -75,8 +76,8 @@ public class TestBNLJoinExec {
     testDir = CommonTestingUtil.getTestDir(TEST_PATH);
     catalog.createTablespace(DEFAULT_TABLESPACE_NAME, testDir.toUri().toString());
     catalog.createDatabase(DEFAULT_DATABASE_NAME, DEFAULT_TABLESPACE_NAME);
-    conf = util.getConfiguration();
-    sm = StorageManagerFactory.getStorageManager(conf, testDir);
+    conf = new TajoConf(util.getConfiguration());
+    conf.setVar(ConfVars.WAREHOUSE_DIR, testDir.toUri().toString());
 
     Schema schema = new Schema();
     schema.addColumn("managerid", Type.INT4);
@@ -86,7 +87,7 @@ public class TestBNLJoinExec {
 
     TableMeta employeeMeta = CatalogUtil.newTableMeta(StoreType.CSV);
     Path employeePath = new Path(testDir, "employee.csv");
-    Appender appender = StorageManagerFactory.getStorageManager(conf).getAppender(employeeMeta, schema, employeePath);
+    Appender appender = TajoStorageHandler.getFileStorageHandler(conf).getAppender(employeeMeta, schema, employeePath);
     appender.init();
     Tuple tuple = new VTuple(schema.size());
     for (int i = 0; i < OUTER_TUPLE_NUM; i++) {
@@ -107,7 +108,7 @@ public class TestBNLJoinExec {
     peopleSchema.addColumn("age", Type.INT4);
     TableMeta peopleMeta = CatalogUtil.newTableMeta(StoreType.CSV);
     Path peoplePath = new Path(testDir, "people.csv");
-    appender = StorageManagerFactory.getStorageManager(conf).getAppender(peopleMeta, peopleSchema, peoplePath);
+    appender = TajoStorageHandler.getFileStorageHandler(conf).getAppender(peopleMeta, peopleSchema, peoplePath);
     appender.init();
     tuple = new VTuple(peopleSchema.size());
     for (int i = 1; i < INNER_TUPLE_NUM; i += 2) {
@@ -147,9 +148,9 @@ public class TestBNLJoinExec {
     Enforcer enforcer = new Enforcer();
     enforcer.enforceJoinAlgorithm(joinNode.getPID(), JoinAlgorithm.BLOCK_NESTED_LOOP_JOIN);
 
-    FileFragment[] empFrags = StorageManager.splitNG(conf, "default.e", employee.getMeta(), employee.getPath(),
+    FileFragment[] empFrags = TajoStorageHandler.getFileStorageHandler(conf).splitNG(conf, "default.e", employee.getMeta(), employee.getPath(),
         Integer.MAX_VALUE);
-    FileFragment[] peopleFrags = StorageManager.splitNG(conf, "default.p", people.getMeta(), people.getPath(),
+    FileFragment[] peopleFrags = TajoStorageHandler.getFileStorageHandler(conf).splitNG(conf, "default.p", people.getMeta(), people.getPath(),
         Integer.MAX_VALUE);
     FileFragment[] merged = TUtil.concat(empFrags, peopleFrags);
     Path workDir = CommonTestingUtil.getTestDir("target/test-data/testBNLCrossJoin");
@@ -157,7 +158,7 @@ public class TestBNLJoinExec {
         LocalTajoTestingUtility.newQueryUnitAttemptId(), merged, workDir);
     ctx.setEnforcer(enforcer);
 
-    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf,sm);
+    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf);
     PhysicalExec exec = phyPlanner.createPlan(ctx, plan);
 
     ProjectionExec proj = (ProjectionExec) exec;
@@ -178,9 +179,9 @@ public class TestBNLJoinExec {
     LogicalNode plan = planner.createPlan(LocalTajoTestingUtility.createDummyContext(conf),
         context).getRootBlock().getRoot();
 
-    FileFragment[] empFrags = StorageManager.splitNG(conf, "default.e", employee.getMeta(), employee.getPath(),
+    FileFragment[] empFrags = TajoStorageHandler.getFileStorageHandler(conf).splitNG(conf, "default.e", employee.getMeta(), employee.getPath(),
         Integer.MAX_VALUE);
-    FileFragment[] peopleFrags = StorageManager.splitNG(conf, "default.p", people.getMeta(), people.getPath(),
+    FileFragment[] peopleFrags = TajoStorageHandler.getFileStorageHandler(conf).splitNG(conf, "default.p", people.getMeta(), people.getPath(),
         Integer.MAX_VALUE);
     FileFragment[] merged = TUtil.concat(empFrags, peopleFrags);
 
@@ -195,8 +196,7 @@ public class TestBNLJoinExec {
         merged, workDir);
     ctx.setEnforcer(enforcer);
 
-
-    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf,sm);
+    PhysicalPlanner phyPlanner = new PhysicalPlannerImpl(conf);
     PhysicalExec exec = phyPlanner.createPlan(ctx, plan);
 
     ProjectionExec proj = (ProjectionExec) exec;

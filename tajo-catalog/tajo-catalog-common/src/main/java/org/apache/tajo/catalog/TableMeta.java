@@ -31,6 +31,7 @@ import org.apache.tajo.common.ProtoObject;
 import org.apache.tajo.json.GsonObject;
 import org.apache.tajo.util.KeyValueSet;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -43,7 +44,9 @@ public class TableMeta implements ProtoObject<CatalogProtos.TableProto>, GsonObj
 
 	@Expose protected StoreType storeType;
 	@Expose protected KeyValueSet options;
-	
+
+  protected Map<String, Object> runtimeOptionMap = new HashMap<String, Object>();
+
 	private TableMeta() {
 	  builder = TableProto.newBuilder();
 	}
@@ -207,5 +210,17 @@ public class TableMeta implements ProtoObject<CatalogProtos.TableProto>, GsonObj
     mergeLocalToBuilder();
     proto = builder.build();
     viaProto = true;
+  }
+
+  public void addRuntimeOption(String key, Object value) {
+    synchronized (runtimeOptionMap) {
+      runtimeOptionMap.put(key, value);
+    }
+  }
+
+  public <T> T getRuntimeOption(String key) {
+    synchronized(runtimeOptionMap) {
+      return (T) runtimeOptionMap.get(key);
+    }
   }
 }

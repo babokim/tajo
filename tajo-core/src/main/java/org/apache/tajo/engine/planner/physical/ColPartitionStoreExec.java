@@ -18,7 +18,6 @@
 
 package org.apache.tajo.engine.planner.physical;
 
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.FileStatus;
@@ -35,8 +34,8 @@ import org.apache.tajo.engine.planner.logical.InsertNode;
 import org.apache.tajo.engine.planner.logical.NodeType;
 import org.apache.tajo.engine.planner.logical.StoreTableNode;
 import org.apache.tajo.storage.Appender;
-import org.apache.tajo.storage.StorageManagerFactory;
 import org.apache.tajo.storage.StorageUtil;
+import org.apache.tajo.storage.TajoStorageHandler;
 import org.apache.tajo.unit.StorageUnit;
 import org.apache.tajo.worker.TaskAttemptContext;
 
@@ -160,7 +159,7 @@ public abstract class ColPartitionStoreExec extends UnaryPhysicalExec {
       actualFilePath = new Path(lastFileName + "_" + suffixId);
     }
 
-    appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema, actualFilePath);
+    appender = TajoStorageHandler.getFileStorageHandler(context.getConf()).getAppender(meta, outSchema, actualFilePath);
 
     appender.enableStats();
     appender.init();

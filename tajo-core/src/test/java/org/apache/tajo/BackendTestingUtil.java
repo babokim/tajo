@@ -47,7 +47,7 @@ public class BackendTestingUtil {
 
   public static void writeTmpTable(TajoConf conf, Path tablePath)
       throws IOException {
-    AbstractStorageManager sm = StorageManagerFactory.getStorageManager(conf, tablePath);
+    FileStorageHandler sm = TajoStorageHandler.getFileStorageHandler(conf, tablePath);
     FileSystem fs = sm.getFileSystem();
 
     Appender appender;

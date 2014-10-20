@@ -24,6 +24,7 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.Path;
+import org.apache.tajo.catalog.TableMeta;
 import org.apache.tajo.util.TUtil;
 
 import java.io.IOException;
@@ -93,10 +94,7 @@ public class FileFragment implements Fragment, Comparable<FileFragment>, Cloneab
     this.diskIds = diskIds;
   }
 
-
-  /**
-   * Get the list of hosts (hostname) hosting this block
-   */
+  @Override
   public String[] getHosts() {
     if (hosts == null) {
       this.hosts = new String[0];
@@ -120,8 +118,13 @@ public class FileFragment implements Fragment, Comparable<FileFragment>, Cloneab
     this.diskIds = diskIds;
   }
 
-  public String getTableName() {
+  public String getHbaseTableName() {
     return this.tableName;
+  }
+
+  @Override
+  public String getKey() {
+    return (this.uri == null) ? null : uri.toString();
   }
 
   public Path getPath() {
@@ -220,5 +223,39 @@ public class FileFragment implements Fragment, Comparable<FileFragment>, Cloneab
     fragmentBuilder.setId(this.tableName);
     fragmentBuilder.setContents(builder.buildPartial().toByteString());
     return fragmentBuilder.build();
+  }
+
+  @Override
+  public boolean isEmpty() {
+    return this.length <= 0;
+  }
+
+  @Override
+  public long getNumBytes() {
+    return this.length;
+  }
+
+  public static List<Path> getInputPaths(TableMeta meta) {
+    List<Path> paths = new ArrayList<Path>();
+
+    String[] pathList = meta.getRuntimeOption("filefragment.paths");
+    if (pathList != null) {
+      for (String eachPath: pathList) {
+        paths.add(new Path(eachPath));
+      }
+    }
+    return paths;
+  }
+
+  public static void setInputPathsToTableMeta(Path[] paths, TableMeta meta) {
+    if (paths == null || paths.length == 0) {
+      return;
+    }
+    String[] pathList = new String[paths.length];
+    for (int i = 0; i < paths.length; i++) {
+      pathList[i] = paths[i].toString();
+    }
+
+    meta.addRuntimeOption("filefragment.paths", pathList);
   }
 }

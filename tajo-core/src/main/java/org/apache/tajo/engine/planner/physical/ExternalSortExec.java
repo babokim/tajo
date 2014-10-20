@@ -106,7 +106,7 @@ public class ExternalSortExec extends SortExec {
   /** total bytes of input data */
   private long sortAndStoredBytes;
 
-  private ExternalSortExec(final TaskAttemptContext context, final AbstractStorageManager sm, final SortNode plan)
+  private ExternalSortExec(final TaskAttemptContext context, final SortNode plan)
       throws PhysicalPlanningException {
     super(context, plan.getInSchema(), plan.getOutSchema(), null, plan.getSortKeys());
 
@@ -129,9 +129,9 @@ public class ExternalSortExec extends SortExec {
   }
 
   public ExternalSortExec(final TaskAttemptContext context,
-                          final AbstractStorageManager sm, final SortNode plan,
+                          final SortNode plan,
                           final CatalogProtos.FragmentProto[] fragments) throws PhysicalPlanningException {
-    this(context, sm, plan);
+    this(context, plan);
 
     mergedInputFragments = TUtil.newList();
     for (CatalogProtos.FragmentProto proto : fragments) {
@@ -141,9 +141,9 @@ public class ExternalSortExec extends SortExec {
   }
 
   public ExternalSortExec(final TaskAttemptContext context,
-                          final AbstractStorageManager sm, final SortNode plan, final PhysicalExec child)
+                          final SortNode plan, final PhysicalExec child)
       throws IOException {
-    this(context, sm, plan);
+    this(context, plan);
     setChild(child);
   }
 
@@ -421,7 +421,7 @@ public class ExternalSortExec extends SortExec {
        */
       int numDeletedFiles = 0;
       for (FileFragment frag : inputFiles) {
-        if (frag.getTableName().contains(INTERMEDIATE_FILE_PREFIX) == true) {
+        if (frag.getHbaseTableName().contains(INTERMEDIATE_FILE_PREFIX) == true) {
           localFS.delete(frag.getPath(), true);
           numDeletedFiles++;
           LOG.info("Delete merged intermediate file: " + frag);

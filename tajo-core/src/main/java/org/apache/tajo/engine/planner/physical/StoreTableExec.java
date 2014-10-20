@@ -29,7 +29,7 @@ import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.engine.planner.logical.InsertNode;
 import org.apache.tajo.engine.planner.logical.PersistentStoreNode;
 import org.apache.tajo.storage.Appender;
-import org.apache.tajo.storage.StorageManagerFactory;
+import org.apache.tajo.storage.TajoStorageHandler;
 import org.apache.tajo.storage.Tuple;
 import org.apache.tajo.unit.StorageUnit;
 import org.apache.tajo.worker.TaskAttemptContext;
@@ -89,10 +89,11 @@ public class StoreTableExec extends UnaryPhysicalExec {
 
     if (plan instanceof InsertNode) {
       InsertNode createTableNode = (InsertNode) plan;
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta,
+      TajoStorageHandler storageHandler = TajoStorageHandler.getStorageHandler(context.getConf(), meta.getStoreType());
+      appender = storageHandler.getAppender(meta,
           createTableNode.getTableSchema(), context.getOutputPath());
     } else {
-      appender = StorageManagerFactory.getStorageManager(context.getConf()).getAppender(meta, outSchema, lastFileName);
+      appender = TajoStorageHandler.getFileStorageHandler(context.getConf()).getAppender(meta, outSchema, lastFileName);
     }
 
     appender.enableStats();

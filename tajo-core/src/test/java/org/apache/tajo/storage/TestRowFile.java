@@ -69,17 +69,18 @@ public class TestRowFile {
 
     TableMeta meta = CatalogUtil.newTableMeta(StoreType.ROWFILE);
 
-    AbstractStorageManager sm = StorageManagerFactory.getStorageManager(conf, new Path(conf.getVar(ConfVars.ROOT_DIR)));
-
     Path tablePath = new Path("/test");
     Path metaPath = new Path(tablePath, ".meta");
     Path dataPath = new Path(tablePath, "test.tbl");
-    FileSystem fs = sm.getFileSystem();
+
+    Path rootDir = new Path(conf.getVar(ConfVars.ROOT_DIR));
+    FileSystem fs = rootDir.getFileSystem(conf);
     fs.mkdirs(tablePath);
 
     FileUtil.writeProto(fs, metaPath, meta.getProto());
 
-    Appender appender = StorageManagerFactory.getStorageManager(conf).getAppender(meta, schema, dataPath);
+    TajoStorageHandler storageHandler = TajoStorageHandler.getFileStorageHandler(conf, rootDir);
+    Appender appender = storageHandler.getAppender(meta, schema, dataPath);
     appender.enableStats();
     appender.init();
 
@@ -110,7 +111,7 @@ public class TestRowFile {
 
     int tupleCnt = 0;
     start = System.currentTimeMillis();
-    Scanner scanner = StorageManagerFactory.getStorageManager(conf).getScanner(meta, schema, fragment);
+    Scanner scanner = storageHandler.getScanner(meta, schema, fragment);
     scanner.init();
     while ((tuple=scanner.next()) != null) {
       tupleCnt++;

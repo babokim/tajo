@@ -24,8 +24,13 @@ import static org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 
 public interface Fragment extends ProtoObject<FragmentProto> {
 
-  public abstract String getTableName();
+  public abstract String getHbaseTableName();
 
-  @Override
-  public abstract FragmentProto getProto();
+  public abstract String getKey();
+
+  public abstract boolean isEmpty();
+
+  public abstract long getNumBytes();
+
+  public String[] getHosts();
 }
