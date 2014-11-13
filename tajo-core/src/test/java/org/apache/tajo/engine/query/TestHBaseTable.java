@@ -1416,6 +1416,35 @@ public class TestHBaseTable extends QueryTestCaseBase {
     }
   }
 
+  @Test
+  public void testInsertIntoValues() throws Exception {
+    String hostName = InetAddress.getLocalHost().getHostName();
+    String zkPort = testingCluster.getHBaseUtil().getConf().get(HConstants.ZOOKEEPER_CLIENT_PORT);
+    assertNotNull(zkPort);
+
+    executeString("CREATE TABLE hbase_mapped_table (rk text, col1 text, col2 text) " +
+        "USING hbase WITH ('table'='hbase_table', 'columns'=':key,col1:a,col2:', " +
+        "'hbase.split.rowkeys'='010,040,060,080', " +
+        "'" + HConstants.ZOOKEEPER_QUORUM + "'='" + hostName + "'," +
+        "'" + HConstants.ZOOKEEPER_CLIENT_PORT + "'='" + zkPort + "')").close();
+
+
+    assertTableExists("hbase_mapped_table");
+    try {
+      executeString("insert into hbase_mapped_table (rk, col1, col2) values " +
+          "('002', '1', '2'), " +
+          "('001', '4', '5'), " +
+          "('056', '100', substr('abcd', 1, 2) )")
+        .close();
+
+      ResultSet res = executeString("select * from hbase_mapped_table");
+      assertResultSet(res);
+      res.close();
+    } finally {
+      executeString("DROP TABLE hbase_mapped_table PURGE").close();
+    }
+  }
+
   private String resultSetToString(ResultScanner scanner,
                                    byte[][] cfNames, byte[][] qualifiers,
                                    boolean[] binaries,

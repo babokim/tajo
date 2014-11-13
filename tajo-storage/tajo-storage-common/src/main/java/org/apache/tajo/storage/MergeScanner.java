@@ -111,9 +111,16 @@ public class MergeScanner implements Scanner {
           tableStats.setNumRows(tableStats.getNumRows() + scannerTableStsts.getNumRows());
         }
       }
-      currentScanner = getNextScanner();
-      if (currentScanner != null) {
-        tuple = currentScanner.next();
+      while (true) {
+        currentScanner = getNextScanner();
+        if (currentScanner != null) {
+          tuple = currentScanner.next();
+          if (tuple != null) {
+            break;
+          }
+        } else {
+          break;
+        }
       }
     }
     return tuple;

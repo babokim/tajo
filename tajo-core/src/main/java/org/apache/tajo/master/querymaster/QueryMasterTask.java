@@ -61,6 +61,7 @@ import org.apache.tajo.plan.verifier.VerifyException;
 import org.apache.tajo.rpc.CallFuture;
 import org.apache.tajo.rpc.NettyClientBase;
 import org.apache.tajo.rpc.RpcConnectionPool;
+import org.apache.tajo.storage.FileStorageManager;
 import org.apache.tajo.storage.StorageManager;
 import org.apache.tajo.storage.StorageProperty;
 import org.apache.tajo.util.HAServiceUtil;
@@ -79,10 +80,6 @@ import static org.apache.tajo.TajoProtos.QueryState;
 
 public class QueryMasterTask extends CompositeService {
   private static final Log LOG = LogFactory.getLog(QueryMasterTask.class.getName());
-
-  // query submission directory is private!
-  final public static FsPermission STAGING_DIR_PERMISSION =
-      FsPermission.createImmutable((short) 0700); // rwx--------
 
   private QueryId queryId;
 
@@ -436,7 +433,7 @@ public class QueryMasterTask extends CompositeService {
 
     try {
 
-      stagingDir = initStagingDir(systemConf, defaultFS, queryId.toString());
+      stagingDir = FileStorageManager.initStagingDir(systemConf, defaultFS, queryId.toString());
       defaultFS.mkdirs(new Path(stagingDir, TajoConstants.RESULT_DIR_NAME));
 
       // Create a subdirectories
@@ -454,52 +451,6 @@ public class QueryMasterTask extends CompositeService {
 
       throw ioe;
     }
-  }
-
-  /**
-   * It initializes the final output and staging directory and sets
-   * them to variables.
-   */
-  public static Path initStagingDir(TajoConf conf, FileSystem fs, String queryId) throws IOException {
-
-    String realUser;
-    String currentUser;
-    UserGroupInformation ugi;
-    ugi = UserGroupInformation.getLoginUser();
-    realUser = ugi.getShortUserName();
-    currentUser = UserGroupInformation.getCurrentUser().getShortUserName();
-
-    Path stagingDir = null;
-
-    ////////////////////////////////////////////
-    // Create Output Directory
-    ////////////////////////////////////////////
-
-    stagingDir = new Path(TajoConf.getStagingDir(conf), queryId);
-
-    if (fs.exists(stagingDir)) {
-      throw new IOException("The staging directory '" + stagingDir + "' already exists");
-    }
-    fs.mkdirs(stagingDir, new FsPermission(STAGING_DIR_PERMISSION));
-    FileStatus fsStatus = fs.getFileStatus(stagingDir);
-    String owner = fsStatus.getOwner();
-
-    if (!owner.isEmpty() && !(owner.equals(currentUser) || owner.equals(realUser))) {
-      throw new IOException("The ownership on the user's query " +
-          "directory " + stagingDir + " is not as expected. " +
-          "It is owned by " + owner + ". The directory must " +
-          "be owned by the submitter " + currentUser + " or " +
-          "by " + realUser);
-    }
-
-    if (!fsStatus.getPermission().equals(STAGING_DIR_PERMISSION)) {
-      LOG.info("Permissions on staging directory " + stagingDir + " are " +
-          "incorrect: " + fsStatus.getPermission() + ". Fixing permissions " +
-          "to correct value " + STAGING_DIR_PERMISSION);
-      fs.setPermission(stagingDir, new FsPermission(STAGING_DIR_PERMISSION));
-    }
-
-    return stagingDir;
   }
 
   public Query getQuery() {

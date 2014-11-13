@@ -22,20 +22,20 @@ import com.google.common.collect.Maps;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.tajo.*;
-import org.apache.tajo.catalog.Schema;
-import org.apache.tajo.catalog.SortSpec;
-import org.apache.tajo.catalog.TableDesc;
-import org.apache.tajo.catalog.TableMeta;
+import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos;
 import org.apache.tajo.catalog.proto.CatalogProtos.FragmentProto;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
+import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.conf.TajoConf.ConfVars;
 import org.apache.tajo.plan.LogicalPlan;
+import org.apache.tajo.plan.logical.InsertNode;
 import org.apache.tajo.plan.logical.LogicalNode;
 import org.apache.tajo.plan.logical.NodeType;
 import org.apache.tajo.plan.logical.ScanNode;
@@ -205,6 +205,29 @@ public abstract class StorageManager {
    */
   public abstract void queryFailed(LogicalNode node) throws IOException;
 
+  /**
+   * It is called before running InsertNonFromQuery such as " insert into table1 select '1' ";
+   * @param queryContext The current query context which contains query properties.
+   * @param insertNode InsertNode
+   * @return If a store type is file based storage returns staging directory, else returns null
+   * @throws IOException
+   */
+  public abstract Path beforeInsertNonFromQuery(OverridableConf queryContext, InsertNode insertNode) throws IOException;
+
+  /**
+   * It is called after running InsertNonFromQuery such as " insert into table1 select '1' ";
+   * @param queryContext The current query context which contains query properties.
+   * @param catalog CatalogService
+   * @param insertNode InsertNode
+   * @param tableDesc Table description about target table
+   * @param stagingDir Staging directory
+   * @param error If a error occurs while running query this parameter is not null.
+   * @return Table statistics data after insertion.
+   * @throws IOException
+   */
+  public abstract TableStats afterInsertNonFromQuery(OverridableConf queryContext, CatalogService catalog,
+                                            InsertNode insertNode, TableDesc tableDesc,
+                                            Path stagingDir, Throwable error) throws IOException;
   /**
    * Returns the current storage type.
    * @return
@@ -930,5 +953,11 @@ public abstract class StorageManager {
     }
 
     return retValue;
+  }
+
+  public static long getTableVolume(TajoConf systemConf, Path tablePath) throws IOException {
+    FileSystem fs = tablePath.getFileSystem(systemConf);
+    ContentSummary directorySummary = fs.getContentSummary(tablePath);
+    return directorySummary.getLength();
   }
 }

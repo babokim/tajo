@@ -74,6 +74,7 @@ public enum OpType {
   IsNullPredicate(IsNullPredicate.class),
   InPredicate(InPredicate.class),
   ValueList(ValueListExpr.class),
+  ValueListArray(ValueListArrayExpr.class),
   ExistsPredicate(ExistsPredicate.class),
 
   // String Operator or Pattern Matching Predicates

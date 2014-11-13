@@ -479,7 +479,7 @@ public class Query implements EventHandler<QueryEvent> {
                 finalOutputDir);
         resultTableDesc.setExternal(true);
 
-        stats.setNumBytes(getTableVolume(query.systemConf, finalOutputDir));
+        stats.setNumBytes(StorageManager.getTableVolume(query.systemConf, finalOutputDir));
         resultTableDesc.setStats(stats);
         query.setResultDesc(resultTableDesc);
       }
@@ -516,7 +516,7 @@ public class Query implements EventHandler<QueryEvent> {
           tableDescTobeCreated.setPartitionMethod(createTableNode.getPartitionMethod());
         }
 
-        stats.setNumBytes(getTableVolume(query.systemConf, finalOutputDir));
+        stats.setNumBytes(StorageManager.getTableVolume(query.systemConf, finalOutputDir));
         tableDescTobeCreated.setStats(stats);
         query.setResultDesc(tableDescTobeCreated);
 
@@ -554,7 +554,7 @@ public class Query implements EventHandler<QueryEvent> {
           finalTable = new TableDesc(tableName, lastStage.getSchema(), meta, finalOutputDir);
         }
 
-        long volume = getTableVolume(query.systemConf, finalOutputDir);
+        long volume = StorageManager.getTableVolume(query.systemConf, finalOutputDir);
         stats.setNumBytes(volume);
         finalTable.setStats(stats);
 
@@ -566,12 +566,6 @@ public class Query implements EventHandler<QueryEvent> {
         query.setResultDesc(finalTable);
       }
     }
-  }
-
-  public static long getTableVolume(TajoConf systemConf, Path tablePath) throws IOException {
-    FileSystem fs = tablePath.getFileSystem(systemConf);
-    ContentSummary directorySummary = fs.getContentSummary(tablePath);
-    return directorySummary.getLength();
   }
 
   public static class SubQueryCompletedTransition implements SingleArcTransition<Query, QueryEvent> {

@@ -45,10 +45,7 @@ import org.apache.tajo.datum.Datum;
 import org.apache.tajo.datum.TextDatum;
 import org.apache.tajo.plan.LogicalPlan;
 import org.apache.tajo.plan.expr.*;
-import org.apache.tajo.plan.logical.CreateTableNode;
-import org.apache.tajo.plan.logical.LogicalNode;
-import org.apache.tajo.plan.logical.NodeType;
-import org.apache.tajo.plan.logical.ScanNode;
+import org.apache.tajo.plan.logical.*;
 import org.apache.tajo.plan.rewrite.RewriteRule;
 import org.apache.tajo.storage.*;
 import org.apache.tajo.storage.fragment.Fragment;
@@ -79,7 +76,7 @@ public class HBaseStorageManager extends StorageManager {
 
   private Map<HConnectionKey, HConnection> connMap = new HashMap<HConnectionKey, HConnection>();
 
-  public HBaseStorageManager (StoreType storeType) {
+  public HBaseStorageManager(StoreType storeType) {
     super(storeType);
   }
 
@@ -90,7 +87,7 @@ public class HBaseStorageManager extends StorageManager {
   @Override
   public void closeStorageManager() {
     synchronized (connMap) {
-      for (HConnection eachConn: connMap.values()) {
+      for (HConnection eachConn : connMap.values()) {
         try {
           eachConn.close();
         } catch (Exception e) {
@@ -147,7 +144,7 @@ public class HBaseStorageManager extends StorageManager {
     }
 
     Configuration hConf = getHBaseConfiguration(conf, tableMeta);
-    HBaseAdmin hAdmin =  new HBaseAdmin(hConf);
+    HBaseAdmin hAdmin = new HBaseAdmin(hConf);
 
     try {
       if (isExternal) {
@@ -165,7 +162,7 @@ public class HBaseStorageManager extends StorageManager {
           tableColumnFamilies.add(eachColumn.getNameAsString());
         }
 
-        Collection<String> mappingColumnFamilies =columnMapping.getColumnFamilyNames();
+        Collection<String> mappingColumnFamilies = columnMapping.getColumnFamilyNames();
         if (mappingColumnFamilies.isEmpty()) {
           throw new IOException("HBase mapped table is required a '" + META_COLUMNS_KEY + "' attribute.");
         }
@@ -264,7 +261,7 @@ public class HBaseStorageManager extends StorageManager {
       try {
         reader = new BufferedReader(new InputStreamReader(fs.open(path)));
         String line = null;
-        while ( (line = reader.readLine()) != null ) {
+        while ((line = reader.readLine()) != null) {
           if (line.isEmpty()) {
             continue;
           }
@@ -282,7 +279,7 @@ public class HBaseStorageManager extends StorageManager {
 
       byte[][] splitKeys = new byte[splitKeySet.size()][];
       int index = 0;
-      for (String eachKey: splitKeySet) {
+      for (String eachKey : splitKeySet) {
         if (numRowKeys == 1 && rowkeyBinary) {
           splitKeys[index++] = HBaseBinarySerializerDeserializer.serialize(rowKeyColumn, new TextDatum(eachKey));
         } else {
@@ -313,7 +310,7 @@ public class HBaseStorageManager extends StorageManager {
     Configuration hbaseConf = (conf == null) ? HBaseConfiguration.create() : HBaseConfiguration.create(conf);
     hbaseConf.set(HConstants.ZOOKEEPER_QUORUM, zkQuorum);
 
-    for (Map.Entry<String, String> eachOption: tableMeta.getOptions().getAllKeyValus().entrySet()) {
+    for (Map.Entry<String, String> eachOption : tableMeta.getOptions().getAllKeyValus().entrySet()) {
       String key = eachOption.getKey();
       if (key.startsWith(HConstants.ZK_CFG_PROPERTY_PREFIX)) {
         hbaseConf.set(key, eachOption.getValue());
@@ -344,12 +341,12 @@ public class HBaseStorageManager extends StorageManager {
     Collection<String> columnFamilies = columnMapping.getColumnFamilyNames();
     //If 'columns' attribute is empty, Tajo table columns are mapped to all HBase table column.
     if (columnFamilies.isEmpty()) {
-      for (Column eachColumn: schema.getColumns()) {
+      for (Column eachColumn : schema.getColumns()) {
         columnFamilies.add(eachColumn.getSimpleName());
       }
     }
 
-    for (String eachColumnFamily: columnFamilies) {
+    for (String eachColumnFamily : columnFamilies) {
       hTableDescriptor.addFamily(new HColumnDescriptor(eachColumnFamily));
     }
 
@@ -358,7 +355,7 @@ public class HBaseStorageManager extends StorageManager {
 
   @Override
   public void purgeTable(TableDesc tableDesc) throws IOException {
-    HBaseAdmin hAdmin =  new HBaseAdmin(getHBaseConfiguration(conf, tableDesc.getMeta()));
+    HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(conf, tableDesc.getMeta()));
 
     try {
       HTableDescriptor hTableDesc = parseHTableDescriptor(tableDesc.getMeta(), tableDesc.getSchema());
@@ -426,7 +423,7 @@ public class HBaseStorageManager extends StorageManager {
         // indexPredications is Disjunctive set
         startRows = new ArrayList<byte[]>();
         stopRows = new ArrayList<byte[]>();
-        for (IndexPredication indexPredication: indexPredications) {
+        for (IndexPredication indexPredication : indexPredications) {
           byte[] startRow;
           byte[] stopRow;
           if (indexPredication.getStartValue() != null) {
@@ -447,7 +444,7 @@ public class HBaseStorageManager extends StorageManager {
         stopRows = TUtil.newList(HConstants.EMPTY_END_ROW);
       }
 
-      hAdmin =  new HBaseAdmin(hconf);
+      hAdmin = new HBaseAdmin(hconf);
       Map<ServerName, ServerLoad> serverLoadMap = new HashMap<ServerName, ServerLoad>();
 
       // region startkey -> HBaseFragment
@@ -565,7 +562,7 @@ public class HBaseStorageManager extends StorageManager {
       if (keys == null || keys.getFirst() == null || keys.getFirst().length == 0) {
         return new ArrayList<Fragment>(1);
       }
-      hAdmin =  new HBaseAdmin(hconf);
+      hAdmin = new HBaseAdmin(hconf);
       Map<ServerName, ServerLoad> serverLoadMap = new HashMap<ServerName, ServerLoad>();
 
       List<Fragment> fragments = new ArrayList<Fragment>(keys.getFirst().length);
@@ -632,7 +629,7 @@ public class HBaseStorageManager extends StorageManager {
   }
 
   public HConnection getConnection(Configuration hbaseConf) throws IOException {
-    synchronized(connMap) {
+    synchronized (connMap) {
       HConnectionKey key = new HConnectionKey(hbaseConf);
       HConnection conn = connMap.get(key);
       if (conn == null) {
@@ -645,7 +642,7 @@ public class HBaseStorageManager extends StorageManager {
   }
 
   static class HConnectionKey {
-    final static String[] CONNECTION_PROPERTIES = new String[] {
+    final static String[] CONNECTION_PROPERTIES = new String[]{
         HConstants.ZOOKEEPER_QUORUM, HConstants.ZOOKEEPER_ZNODE_PARENT,
         HConstants.ZOOKEEPER_CLIENT_PORT,
         HConstants.ZOOKEEPER_RECOVERABLE_WAITTIME,
@@ -654,7 +651,7 @@ public class HBaseStorageManager extends StorageManager {
         HConstants.HBASE_CLIENT_PREFETCH_LIMIT,
         HConstants.HBASE_META_SCANNER_CACHING,
         HConstants.HBASE_CLIENT_INSTANCE_ID,
-        HConstants.RPC_CODEC_CONF_KEY };
+        HConstants.RPC_CODEC_CONF_KEY};
 
     private Map<String, String> properties;
     private String username;
@@ -752,7 +749,7 @@ public class HBaseStorageManager extends StorageManager {
     if (indexableColumns != null && indexableColumns.length == 1) {
       // Currently supports only single index column.
       List<Set<EvalNode>> indexablePredicateList = findIndexablePredicateSet(scanNode, indexableColumns);
-      for (Set<EvalNode> eachEvalSet: indexablePredicateList) {
+      for (Set<EvalNode> eachEvalSet : indexablePredicateList) {
         Pair<Datum, Datum> indexPredicationValues = getIndexablePredicateValue(columnMapping, eachEvalSet);
         if (indexPredicationValues != null) {
           IndexPredication indexPredication = new IndexPredication();
@@ -806,7 +803,6 @@ public class HBaseStorageManager extends StorageManager {
   }
 
   /**
-   *
    * @param evalNode The expression to be checked
    * @return true if an conjunctive expression, consisting of indexable expressions
    */
@@ -852,7 +848,7 @@ public class HBaseStorageManager extends StorageManager {
                                                        Set<EvalNode> evalNodes) {
     Datum startDatum = null;
     Datum endDatum = null;
-    for (EvalNode evalNode: evalNodes) {
+    for (EvalNode evalNode : evalNodes) {
       if (evalNode instanceof BinaryEval) {
         BinaryEval binaryEval = (BinaryEval) evalNode;
         EvalNode left = binaryEval.getLeftExpr();
@@ -1084,12 +1080,13 @@ public class HBaseStorageManager extends StorageManager {
     StorageProperty storageProperty = new StorageProperty();
     storageProperty.setSortedInsert(true);
     storageProperty.setSupportsInsertInto(true);
+    storageProperty.setSupportsInsertIntoValues(true);
     return storageProperty;
   }
 
   public void beforeInsertOrCATS(LogicalNode node) throws IOException {
     if (node.getType() == NodeType.CREATE_TABLE) {
-      CreateTableNode cNode = (CreateTableNode)node;
+      CreateTableNode cNode = (CreateTableNode) node;
       if (!cNode.isExternal()) {
         TableMeta tableMeta = new TableMeta(cNode.getStorageType(), cNode.getOptions());
         createTable(tableMeta, cNode.getTableSchema(), cNode.isExternal(), cNode.isIfNotExists());
@@ -1100,12 +1097,12 @@ public class HBaseStorageManager extends StorageManager {
   @Override
   public void queryFailed(LogicalNode node) throws IOException {
     if (node.getType() == NodeType.CREATE_TABLE) {
-      CreateTableNode cNode = (CreateTableNode)node;
+      CreateTableNode cNode = (CreateTableNode) node;
       if (cNode.isExternal()) {
         return;
       }
       TableMeta tableMeta = new TableMeta(cNode.getStorageType(), cNode.getOptions());
-      HBaseAdmin hAdmin =  new HBaseAdmin(getHBaseConfiguration(conf, tableMeta));
+      HBaseAdmin hAdmin = new HBaseAdmin(getHBaseConfiguration(conf, tableMeta));
 
       try {
         HTableDescriptor hTableDesc = parseHTableDescriptor(tableMeta, cNode.getTableSchema());
@@ -1119,7 +1116,7 @@ public class HBaseStorageManager extends StorageManager {
   }
 
   @Override
-  public void verifyInsertTableSchema(TableDesc tableDesc, Schema outSchema) throws IOException  {
+  public void verifyInsertTableSchema(TableDesc tableDesc, Schema outSchema) throws IOException {
     if (tableDesc != null) {
       Schema tableSchema = tableDesc.getSchema();
       if (tableSchema.size() != outSchema.size()) {
@@ -1135,5 +1132,32 @@ public class HBaseStorageManager extends StorageManager {
         }
       }
     }
+  }
+
+  @Override
+  public Path beforeInsertNonFromQuery(OverridableConf queryContext, InsertNode insertNode) throws IOException {
+    queryContext.set(INSERT_PUT_MODE, "true");
+    return null;
+  }
+
+  @Override
+  public TableStats afterInsertNonFromQuery(OverridableConf queryContext, CatalogService catalog,
+                                            InsertNode insertNode, TableDesc tableDesc,
+                                            Path stagingDir, Throwable error) throws IOException {
+    queryContext.set(INSERT_PUT_MODE, "false");
+    if (error == null) {
+      return null;
+    }
+    long previousNumRows = tableDesc.getStats().getNumRows();
+    if (previousNumRows != TajoConstants.UNKNOWN_ROW_NUMBER) {
+      if (insertNode.isWithValues()) {
+        LogicalNode childNode = insertNode.getChild();
+        tableDesc.getStats().setNumRows(previousNumRows + ((EvalExprArrayNode)childNode).getEvalNodes().length);
+      } else {
+        tableDesc.getStats().setNumRows(previousNumRows + 1);
+      }
+    }
+
+    return tableDesc.getStats();
   }
 }

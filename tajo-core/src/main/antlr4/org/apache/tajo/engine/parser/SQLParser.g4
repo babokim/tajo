@@ -1558,8 +1558,20 @@ null_ordering
 */
 
 insert_statement
-  : INSERT (OVERWRITE)? INTO table_name (LEFT_PAREN column_name_list RIGHT_PAREN)? query_expression
+  : INSERT (OVERWRITE)? INTO tb_name=table_name (LEFT_PAREN column_list=column_name_list RIGHT_PAREN)? (VALUES values_list=insert_values_list_expression)? query_expression?
   | INSERT (OVERWRITE)? INTO LOCATION path=Character_String_Literal (USING storage_type=identifier (param_clause)?)? query_expression
+  ;
+
+insert_values_list_expression
+  : insert_values_list ( COMMA insert_values_list )*
+  ;
+
+insert_values_list
+  : LEFT_PAREN value_list=insert_value_list RIGHT_PAREN
+  ;
+
+insert_value_list
+  : value_expression  ( COMMA value_expression )*
   ;
 
 /*

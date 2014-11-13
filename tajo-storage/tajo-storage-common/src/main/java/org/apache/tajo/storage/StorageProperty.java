@@ -21,6 +21,7 @@ package org.apache.tajo.storage;
 public class StorageProperty {
   private boolean supportsInsertInto;
   private boolean sortedInsert;
+  private boolean supportsInsertIntoValues;
 
   public boolean isSupportsInsertInto() {
     return supportsInsertInto;
@@ -36,5 +37,13 @@ public class StorageProperty {
 
   public void setSortedInsert(boolean sortedInsert) {
     this.sortedInsert = sortedInsert;
+  }
+
+  public boolean isSupportsInsertIntoValues() {
+    return supportsInsertIntoValues;
+  }
+
+  public void setSupportsInsertIntoValues(boolean supportsInsertIntoValues) {
+    this.supportsInsertIntoValues = supportsInsertIntoValues;
   }
 }

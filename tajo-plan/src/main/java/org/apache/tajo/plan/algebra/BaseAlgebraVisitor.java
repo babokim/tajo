@@ -169,6 +169,9 @@ public class BaseAlgebraVisitor<CONTEXT, RESULT> implements AlgebraVisitor<CONTE
     case InPredicate:
       current = visitInPredicate(ctx, stack, (InPredicate) expr);
       break;
+    case ValueListArray:
+      current = visitValueListArrayExpr(ctx, stack, (ValueListArrayExpr) expr);
+      break;
     case ValueList:
       current = visitValueListExpr(ctx, stack, (ValueListExpr) expr);
       break;
@@ -575,6 +578,11 @@ public class BaseAlgebraVisitor<CONTEXT, RESULT> implements AlgebraVisitor<CONTE
   @Override
   public RESULT visitInPredicate(CONTEXT ctx, Stack<Expr> stack, InPredicate expr) throws PlanningException {
     return visitDefaultBinaryExpr(ctx, stack, expr);
+  }
+
+  @Override
+  public RESULT visitValueListArrayExpr(CONTEXT ctx, Stack<Expr> stack, ValueListArrayExpr expr) throws PlanningException {
+    return null;
   }
 
   @Override

@@ -293,6 +293,38 @@ public class PreLogicalPlanVerifier extends BaseAlgebraVisitor<PreLogicalPlanVer
       }
     }
 
+    // INSERT ... VALUES
+//    if (child == null && (expr.getValues() == null || expr.getValues().length == 0)) {
+//      context.state.addVerification("INSERT with VALUES should have values");
+//    }
+//    if (child == null && expr.getValues() != null) {
+//      if (expr.hasTableName()) {
+//        int columnSize;
+//        if (expr.hasTargetColumns()) {
+//          columnSize = expr.getTargetColumns().length;
+//        } else {
+//          String qualifiedName = expr.getTableName();
+//          if (TajoConstants.EMPTY_STRING.equals(CatalogUtil.extractQualifier(expr.getTableName()))) {
+//            qualifiedName = CatalogUtil.buildFQName(context.queryContext.get(SessionVars.CURRENT_DATABASE),
+//                expr.getTableName());
+//          }
+//
+//          TableDesc table = catalog.getTableDesc(qualifiedName);
+//          if (table == null) {
+//            context.state.addVerification(String.format("relation \"%s\" does not exist", qualifiedName));
+//            return null;
+//          }
+//          columnSize = table.getSchema().getColumns().size();
+//        }
+//        if (columnSize > expr.getValues().length) {
+//          context.state.addVerification("INSERT has smaller expressions than target columns");
+//        } else if (columnSize < expr.getValues().length) {
+//          context.state.addVerification("INSERT has more expressions than target columns");
+//        }
+//      } else {
+//        context.state.addVerification("INSERT with VALUES should have table name");
+//      }
+//    }
     return expr;
   }
 }

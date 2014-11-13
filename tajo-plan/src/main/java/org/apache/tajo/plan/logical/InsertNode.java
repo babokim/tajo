@@ -27,6 +27,7 @@ import org.apache.tajo.util.TUtil;
 
 public class InsertNode extends StoreTableNode implements Cloneable {
   @Expose private boolean overwrite;
+  @Expose private boolean withValues;
   @Expose private Schema tableSchema;
 
   /** a target schema of a target table */
@@ -116,7 +117,15 @@ public class InsertNode extends StoreTableNode implements Cloneable {
   public boolean hasStorageType() {
     return this.storageType != null;
   }
-  
+
+  public boolean isWithValues() {
+    return withValues;
+  }
+
+  public void setWithValues(boolean withValues) {
+    this.withValues = withValues;
+  }
+
   @Override
   public boolean equals(Object obj) {
     if (obj instanceof InsertNode) {
@@ -169,6 +178,9 @@ public class InsertNode extends StoreTableNode implements Cloneable {
   public PlanString getPlanString() {
     PlanString planString = new PlanString(this);
     planString.appendTitle(" INTO ");
+    if (withValues) {
+      planString.appendTitle(" VALUES ");
+    }
     if (hasTargetTable()) {
       planString.appendTitle(getTableName());
       if (hasTargetSchema()) {

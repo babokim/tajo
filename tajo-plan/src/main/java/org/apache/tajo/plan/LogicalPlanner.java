@@ -1431,6 +1431,12 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     insertNode.setOverwrite(expr.isOverwrite());
     insertNode.setSubQuery(subQuery);
 
+    if (subQuery.getType() == NodeType.EXPRS_ARRAY) {
+      // INSERT INTO ... VALUES
+      insertNode.setWithValues(true);
+    } else {
+      insertNode.setWithValues(false);
+    }
     if (expr.hasTableName()) { // INSERT (OVERWRITE) INTO TABLE ...
       return buildInsertIntoTablePlan(context, insertNode, expr);
     } else if (expr.hasLocation()) { // INSERT (OVERWRITE) INTO LOCATION ...
@@ -1438,6 +1444,32 @@ public class LogicalPlanner extends BaseAlgebraVisitor<LogicalPlanner.PlanContex
     } else {
       throw new IllegalStateException("Invalid Query");
     }
+  }
+
+  @Override
+  public EvalExprArrayNode visitValueListArrayExpr(PlanContext context, Stack<Expr> stack,
+                                                   ValueListArrayExpr expr) throws PlanningException {
+    EvalExprArrayNode evalArrayNode = context.queryBlock.getNodeFromExpr(expr);
+
+    EvalExprNode[] evalNodes = new EvalExprNode[expr.getValues().length];
+    int index = 0;
+
+    for (ValueListExpr valueListExpr : expr.getValues()) {
+      Expr[] valueExprs = valueListExpr.getValues();
+      Target[] targets = new Target[valueExprs.length];
+
+      for (int i = 0; i < targets.length; i++) {
+        EvalNode evalNode = exprAnnotator.createEvalNode(context, valueExprs[i], NameResolvingMode.RELS_ONLY);
+        targets[i] = new Target(evalNode, context.plan.generateUniqueColumnName(valueExprs[i]));
+      }
+      EvalExprNode evalExprNode = context.queryBlock.getNodeFromExpr(valueListExpr);
+      evalExprNode.setTargets(targets);
+      evalExprNode.setOutSchema(PlannerUtil.targetToSchema(targets));
+      evalNodes[index++] = evalExprNode;
+    }
+
+    evalArrayNode.setEvalNodes(evalNodes);
+    return evalArrayNode;
   }
 
   /**

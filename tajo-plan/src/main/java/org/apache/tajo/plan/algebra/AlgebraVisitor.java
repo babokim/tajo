@@ -72,6 +72,7 @@ public interface AlgebraVisitor<CONTEXT, RESULT> {
   RESULT visitCaseWhen(CONTEXT ctx, Stack<Expr> stack, CaseWhenPredicate expr) throws PlanningException;
   RESULT visitIsNullPredicate(CONTEXT ctx, Stack<Expr> stack, IsNullPredicate expr) throws PlanningException;
   RESULT visitInPredicate(CONTEXT ctx, Stack<Expr> stack, InPredicate expr) throws PlanningException;
+  RESULT visitValueListArrayExpr(CONTEXT ctx, Stack<Expr> stack, ValueListArrayExpr expr) throws PlanningException;
   RESULT visitValueListExpr(CONTEXT ctx, Stack<Expr> stack, ValueListExpr expr) throws PlanningException;
   RESULT visitExistsPredicate(CONTEXT ctx, Stack<Expr> stack, ExistsPredicate expr) throws PlanningException;
 

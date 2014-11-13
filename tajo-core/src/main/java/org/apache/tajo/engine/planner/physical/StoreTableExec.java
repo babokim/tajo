@@ -76,11 +76,11 @@ public class StoreTableExec extends UnaryPhysicalExec {
       maxPerFileSize = context.getQueryContext().getLong(SessionVars.MAX_OUTPUT_FILE_SIZE) * StorageUnit.MB;
     }
 
-    openNewFile(writtenFileNum);
+    openNewAppender(writtenFileNum);
     sumStats = new TableStats();
   }
 
-  public void openNewFile(int suffixId) throws IOException {
+  public void openNewAppender(int suffixId) throws IOException {
     Schema appenderSchema = (plan instanceof InsertNode) ? ((InsertNode) plan).getTableSchema() : outSchema;
 
     if (PlannerUtil.isFileStorageType(meta.getStoreType())) {
@@ -123,7 +123,7 @@ public class StoreTableExec extends UnaryPhysicalExec {
 
         writtenFileNum++;
         StatisticsUtil.aggregateTableStat(sumStats, appender.getStats());
-        openNewFile(writtenFileNum);
+        openNewAppender(writtenFileNum);
       }
     }
         

@@ -61,6 +61,8 @@ public class BasicLogicalPlanVisitor<CONTEXT, RESULT> implements LogicalPlanVisi
         break;
       case EXPRS:
         return null;
+      case EXPRS_ARRAY:
+        return null;
       case PROJECTION:
         current = visitProjection(context, plan, block, (ProjectionNode) node, stack);
         break;
@@ -298,10 +300,15 @@ public class BasicLogicalPlanVisitor<CONTEXT, RESULT> implements LogicalPlanVisi
   @Override
   public RESULT visitInsert(CONTEXT context, LogicalPlan plan, LogicalPlan.QueryBlock block, InsertNode node,
                             Stack<LogicalNode> stack) throws PlanningException {
-    stack.push(node);
-    RESULT result = visit(context, plan, block, node.getChild(), stack);
-    stack.pop();
-    return result;
+    if (node.getChild() != null) {
+      stack.push(node);
+      RESULT result = visit(context, plan, block, node.getChild(), stack);
+      stack.pop();
+      return result;
+    } else {
+      // INSERT ... VALUES
+      return null;
+    }
   }
 
   @Override

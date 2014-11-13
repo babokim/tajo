@@ -43,7 +43,9 @@ import org.apache.tajo.common.TajoDataTypes;
 import org.apache.tajo.conf.TajoConf;
 import org.apache.tajo.datum.DatumFactory;
 import org.apache.tajo.engine.parser.SQLAnalyzer;
+import org.apache.tajo.engine.planner.physical.EvalExprArrayExec;
 import org.apache.tajo.engine.planner.physical.EvalExprExec;
+import org.apache.tajo.engine.planner.physical.PhysicalExec;
 import org.apache.tajo.engine.planner.physical.StoreTableExec;
 import org.apache.tajo.engine.query.QueryContext;
 import org.apache.tajo.ipc.ClientProtos;
@@ -271,20 +273,20 @@ public class GlobalEngine extends AbstractService {
 
       // NonFromQuery indicates a form of 'select a, x+y;'
     } else if (PlannerUtil.checkIfNonFromQuery(plan)) {
-      Target[] targets = plan.getRootBlock().getRawTargets();
-      if (targets == null) {
-        throw new PlanningException("No targets");
-      }
-      final Tuple outTuple = new VTuple(targets.length);
-      for (int i = 0; i < targets.length; i++) {
-        EvalNode eval = targets[i].getEvalTree();
-        outTuple.put(i, eval.eval(null, null));
-      }
       boolean isInsert = rootNode.getChild() != null && rootNode.getChild().getType() == NodeType.INSERT;
       if (isInsert) {
         InsertNode insertNode = rootNode.getChild();
         insertNonFromQuery(queryContext, insertNode, responseBuilder);
       } else {
+        Target[] targets = plan.getRootBlock().getRawTargets();
+        if (targets == null) {
+          throw new PlanningException("No targets");
+        }
+        final Tuple outTuple = new VTuple(targets.length);
+        for (int i = 0; i < targets.length; i++) {
+          EvalNode eval = targets[i].getEvalTree();
+          outTuple.put(i, eval.eval(null, null));
+        }
         Schema schema = PlannerUtil.targetToSchema(targets);
         RowStoreUtil.RowStoreEncoder encoder = RowStoreUtil.createEncoder(schema);
         byte[] serializedBytes = encoder.toBytes(outTuple);
@@ -335,92 +337,65 @@ public class GlobalEngine extends AbstractService {
     return response;
   }
 
-  private void insertNonFromQuery(QueryContext queryContext, InsertNode insertNode, SubmitQueryResponse.Builder responseBuilder)
+  private void insertNonFromQuery(QueryContext queryContext, InsertNode insertNode,
+                                  SubmitQueryResponse.Builder responseBuilder)
       throws Exception {
-    String nodeUniqName = insertNode.getTableName() == null ? insertNode.getPath().getName() : insertNode.getTableName();
-    String queryId = nodeUniqName + "_" + System.currentTimeMillis();
-
-    FileSystem fs = TajoConf.getWarehouseDir(context.getConf()).getFileSystem(context.getConf());
-    Path stagingDir = QueryMasterTask.initStagingDir(context.getConf(), fs, queryId.toString());
-
-    Path stagingResultDir = new Path(stagingDir, TajoConstants.RESULT_DIR_NAME);
-    fs.mkdirs(stagingResultDir);
-
     TableDesc tableDesc = null;
-    Path finalOutputDir = null;
+    StorageManager sm;
     if (insertNode.getTableName() != null) {
-      tableDesc = this.catalog.getTableDesc(insertNode.getTableName());
-      finalOutputDir = tableDesc.getPath();
+      String tableName = insertNode.getTableName();
+      tableDesc = catalog.getTableDesc(tableName);
+      if (tableDesc == null) {
+        throw new Exception("Not exists table: " + tableName);
+      }
+      sm = StorageManager.getStorageManager(context.getConf(), tableDesc.getMeta().getStoreType());
     } else {
-      finalOutputDir = insertNode.getPath();
+      sm = StorageManager.getFileStorageManager(context.getConf());
     }
 
-    TaskAttemptContext taskAttemptContext =
-        new TaskAttemptContext(queryContext, null, null, (CatalogProtos.FragmentProto[]) null, stagingDir);
-    taskAttemptContext.setOutputPath(new Path(stagingResultDir, "part-01-000000"));
-
-    EvalExprExec evalExprExec = new EvalExprExec(taskAttemptContext, (EvalExprNode) insertNode.getChild());
-    StoreTableExec exec = new StoreTableExec(taskAttemptContext, insertNode, evalExprExec);
+    Path stagingDir = sm.beforeInsertNonFromQuery(queryContext, insertNode);
+    StoreTableExec exec = null;
+    TableStats stats = null;
+    Throwable error = null;
     try {
+      // run insert
+      TaskAttemptContext taskAttemptContext =
+          new TaskAttemptContext(queryContext, null, null, null, stagingDir);
+      if (stagingDir != null) {
+        Path stagingResultDir = new Path(stagingDir, TajoConstants.RESULT_DIR_NAME);
+        taskAttemptContext.setOutputPath(new Path(stagingResultDir, "part-01-000000"));
+      }
+
+      PhysicalExec childExec;
+      if (insertNode.isWithValues()) {
+        StorageProperty storageProperty = sm.getStorageProperty();
+        if (!storageProperty.isSupportsInsertIntoValues()) {
+          throw new Exception(tableDesc.getMeta().getStoreType() + " does not support a INSERT ... VALUES query");
+        }
+        childExec = new EvalExprArrayExec(taskAttemptContext, (EvalExprArrayNode) insertNode.getChild());
+      } else {
+        childExec = new EvalExprExec(taskAttemptContext, (EvalExprNode) insertNode.getChild());
+      }
+      exec = new StoreTableExec(taskAttemptContext, insertNode, childExec);
       exec.init();
       exec.next();
+    } catch (Throwable t) {
+      error = t;
+      throw new Exception(t.getMessage(), t);
     } finally {
-      exec.close();
-    }
-
-    if (insertNode.isOverwrite()) { // INSERT OVERWRITE INTO
-      // it moves the original table into the temporary location.
-      // Then it moves the new result table into the original table location.
-      // Upon failed, it recovers the original table if possible.
-      boolean movedToOldTable = false;
-      boolean committed = false;
-      Path oldTableDir = new Path(stagingDir, TajoConstants.INSERT_OVERWIRTE_OLD_TABLE_NAME);
-      try {
-        if (fs.exists(finalOutputDir)) {
-          fs.rename(finalOutputDir, oldTableDir);
-          movedToOldTable = fs.exists(oldTableDir);
-        } else { // if the parent does not exist, make its parent directory.
-          fs.mkdirs(finalOutputDir.getParent());
-        }
-        fs.rename(stagingResultDir, finalOutputDir);
-        committed = fs.exists(finalOutputDir);
-      } catch (IOException ioe) {
-        // recover the old table
-        if (movedToOldTable && !committed) {
-          fs.rename(oldTableDir, finalOutputDir);
-        }
+      if (exec != null) {
+        exec.close();
       }
-    } else {
-      FileStatus[] files = fs.listStatus(stagingResultDir);
-      for (FileStatus eachFile: files) {
-        Path targetFilePath = new Path(finalOutputDir, eachFile.getPath().getName());
-        if (fs.exists(targetFilePath)) {
-          targetFilePath = new Path(finalOutputDir, eachFile.getPath().getName() + "_" + System.currentTimeMillis());
-        }
-        fs.rename(eachFile.getPath(), targetFilePath);
-      }
+      stats = sm.afterInsertNonFromQuery(queryContext, catalog, insertNode, tableDesc, stagingDir, error);
     }
 
     if (insertNode.hasTargetTable()) {
-      TableStats stats = tableDesc.getStats();
-      long volume = Query.getTableVolume(context.getConf(), finalOutputDir);
-      stats.setNumBytes(volume);
-      stats.setNumRows(1);
-
-      catalog.dropTable(insertNode.getTableName());
-      catalog.createTable(tableDesc);
-
       responseBuilder.setTableDesc(tableDesc.getProto());
     } else {
-      TableStats stats = new TableStats();
-      long volume = Query.getTableVolume(context.getConf(), finalOutputDir);
-      stats.setNumBytes(volume);
-      stats.setNumRows(1);
-
       // Empty TableDesc
       List<CatalogProtos.ColumnProto> columns = new ArrayList<CatalogProtos.ColumnProto>();
       CatalogProtos.TableDescProto tableDescProto = CatalogProtos.TableDescProto.newBuilder()
-          .setTableName(nodeUniqName)
+          .setTableName(insertNode.getPath().getName() )
           .setMeta(CatalogProtos.TableProto.newBuilder().setStoreType(CatalogProtos.StoreType.CSV).build())
           .setSchema(CatalogProtos.SchemaProto.newBuilder().addAllFields(columns).build())
           .setStats(stats.getProto())

@@ -1428,8 +1428,33 @@ public class SQLAnalyzer extends SQLParserBaseVisitor<Expr> {
     return typeDefinition;
   }
 
+  public ValueListExpr visitInsert_values_list(SQLParser.Insert_values_listContext ctx) {
+    Expr[] exprs = new Expr[ctx.insert_value_list().value_expression().size()];
+
+    for (int i = 0; i < exprs.length; i++) {
+      exprs[i] = visitValue_expression(ctx.insert_value_list().value_expression(i));
+    }
+    return new ValueListExpr(exprs);
+  }
+
+  @Override
+  public ValueListArrayExpr visitInsert_values_list_expression(SQLParser.Insert_values_list_expressionContext ctx) {
+    List<Insert_values_listContext> values_ListContextList = ctx.insert_values_list();
+    ValueListExpr[] valueListArray = new ValueListExpr[values_ListContextList.size()];
+    for (int i = 0; i < valueListArray.length; i++) {
+      valueListArray[i] = visitInsert_values_list(values_ListContextList.get(i));
+    }
+    return new ValueListArrayExpr(valueListArray);
+  }
+
   @Override
   public Expr visitInsert_statement(SQLParser.Insert_statementContext ctx) {
+    Preconditions.checkState(ctx.insert_values_list_expression() != null || ctx.query_expression() != null,
+        "Either values clause or select clause should be given.");
+
+    Preconditions.checkState(ctx.insert_values_list_expression() != null ^ ctx.query_expression() != null,
+        "Values clause and Select clause cannot coexist.");
+
     Insert insertExpr = new Insert();
 
     if (ctx.OVERWRITE() != null) {
@@ -1447,7 +1472,12 @@ public class SQLAnalyzer extends SQLParserBaseVisitor<Expr> {
 
         insertExpr.setTargetColumns(targetColumns);
       }
+
+      if (ctx.insert_values_list_expression() != null) {
+        insertExpr.setSubQuery(visitInsert_values_list_expression(ctx.insert_values_list_expression()));
+      }
     }
+
 
     if (ctx.LOCATION() != null) {
       insertExpr.setLocation(stripQuote(ctx.path.getText()));
@@ -1461,12 +1491,15 @@ public class SQLAnalyzer extends SQLParserBaseVisitor<Expr> {
       }
     }
 
-    insertExpr.setSubQuery(visitQuery_expression(ctx.query_expression()));
+    if (ctx.query_expression() != null) {
+      insertExpr.setSubQuery(visitQuery_expression(ctx.query_expression()));
+    }
 
     Preconditions.checkState(insertExpr.hasTableName() || insertExpr.hasLocation(),
         "Either a table name or a location should be given.");
     Preconditions.checkState(insertExpr.hasTableName() ^ insertExpr.hasLocation(),
         "A table name and a location cannot coexist.");
+
     return insertExpr;
   }
 

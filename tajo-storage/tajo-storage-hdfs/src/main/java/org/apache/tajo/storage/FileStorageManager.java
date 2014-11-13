@@ -25,8 +25,10 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.*;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.tajo.OverridableConf;
 import org.apache.tajo.QueryUnitAttemptId;
 import org.apache.tajo.TajoConstants;
@@ -34,6 +36,7 @@ import org.apache.tajo.catalog.*;
 import org.apache.tajo.catalog.proto.CatalogProtos.StoreType;
 import org.apache.tajo.catalog.statistics.TableStats;
 import org.apache.tajo.conf.TajoConf;
+import org.apache.tajo.plan.logical.InsertNode;
 import org.apache.tajo.plan.logical.LogicalNode;
 import org.apache.tajo.plan.logical.ScanNode;
 import org.apache.tajo.storage.fragment.FileFragment;
@@ -46,7 +49,11 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileStorageManager extends StorageManager {
-  private final Log LOG = LogFactory.getLog(FileStorageManager.class);
+  private static final Log LOG = LogFactory.getLog(FileStorageManager.class);
+
+  // query submission directory is private!
+  final public static FsPermission STAGING_DIR_PERMISSION =
+      FsPermission.createImmutable((short) 0700); // rwx--------
 
   static final String OUTPUT_FILE_PREFIX="part-";
   static final ThreadLocal<NumberFormat> OUTPUT_FILE_FORMAT_SUBQUERY =
@@ -829,6 +836,135 @@ public class FileStorageManager extends StorageManager {
                                           Schema inputSchema, SortSpec[] sortSpecs, TupleRange dataRange)
       throws IOException {
     return null;
+  }
+
+  @Override
+  public Path beforeInsertNonFromQuery(OverridableConf queryContext, InsertNode insertNode) throws IOException {
+    String nodeUniqName = insertNode.getTableName() == null ? insertNode.getPath().getName() : insertNode.getTableName();
+    String queryId = nodeUniqName + "_" + System.currentTimeMillis();
+
+    FileSystem fs = TajoConf.getWarehouseDir(queryContext.getConf()).getFileSystem(queryContext.getConf());
+    Path stagingDir = initStagingDir(queryContext.getConf(), fs, queryId.toString());
+
+    Path stagingResultDir = new Path(stagingDir, TajoConstants.RESULT_DIR_NAME);
+    fs.mkdirs(stagingResultDir);
+
+    return stagingDir;
+  }
+
+  /**
+   * It initializes the final output and staging directory and sets
+   * them to variables.
+   */
+  public static Path initStagingDir(TajoConf conf, FileSystem fs, String queryId) throws IOException {
+
+    String realUser;
+    String currentUser;
+    UserGroupInformation ugi;
+    ugi = UserGroupInformation.getLoginUser();
+    realUser = ugi.getShortUserName();
+    currentUser = UserGroupInformation.getCurrentUser().getShortUserName();
+
+    Path stagingDir = null;
+
+    ////////////////////////////////////////////
+    // Create Output Directory
+    ////////////////////////////////////////////
+
+    stagingDir = new Path(TajoConf.getStagingDir(conf), queryId);
+
+    if (fs.exists(stagingDir)) {
+      throw new IOException("The staging directory '" + stagingDir + "' already exists");
+    }
+    fs.mkdirs(stagingDir, new FsPermission(STAGING_DIR_PERMISSION));
+    FileStatus fsStatus = fs.getFileStatus(stagingDir);
+    String owner = fsStatus.getOwner();
+
+    if (!owner.isEmpty() && !(owner.equals(currentUser) || owner.equals(realUser))) {
+      throw new IOException("The ownership on the user's query " +
+          "directory " + stagingDir + " is not as expected. " +
+          "It is owned by " + owner + ". The directory must " +
+          "be owned by the submitter " + currentUser + " or " +
+          "by " + realUser);
+    }
+
+    if (!fsStatus.getPermission().equals(STAGING_DIR_PERMISSION)) {
+      LOG.info("Permissions on staging directory " + stagingDir + " are " +
+          "incorrect: " + fsStatus.getPermission() + ". Fixing permissions " +
+          "to correct value " + STAGING_DIR_PERMISSION);
+      fs.setPermission(stagingDir, new FsPermission(STAGING_DIR_PERMISSION));
+    }
+
+    return stagingDir;
+  }
+
+  @Override
+  public TableStats afterInsertNonFromQuery(OverridableConf queryContext, CatalogService catalog,
+                                            InsertNode insertNode, TableDesc tableDesc,
+                                            Path stagingDir, Throwable error) throws IOException {
+    Path finalOutputDir = null;
+    if (tableDesc != null) {
+      finalOutputDir = tableDesc.getPath();
+    } else {
+      finalOutputDir = insertNode.getPath();
+    }
+    Path stagingResultDir = new Path(stagingDir, TajoConstants.RESULT_DIR_NAME);
+    FileSystem fs = stagingDir.getFileSystem(queryContext.getConf());
+
+    if (error != null) {
+      fs.delete(stagingDir, true);
+      return null;
+    }
+    if (insertNode.isOverwrite()) { // INSERT OVERWRITE INTO
+      // it moves the original table into the temporary location.
+      // Then it moves the new result table into the original table location.
+      // Upon failed, it recovers the original table if possible.
+      boolean movedToOldTable = false;
+      boolean committed = false;
+      Path oldTableDir = new Path(stagingDir, TajoConstants.INSERT_OVERWIRTE_OLD_TABLE_NAME);
+      try {
+        if (fs.exists(finalOutputDir)) {
+          fs.rename(finalOutputDir, oldTableDir);
+          movedToOldTable = fs.exists(oldTableDir);
+        } else { // if the parent does not exist, make its parent directory.
+          fs.mkdirs(finalOutputDir.getParent());
+        }
+        fs.rename(stagingResultDir, finalOutputDir);
+        committed = fs.exists(finalOutputDir);
+      } catch (IOException ioe) {
+        // recover the old table
+        if (movedToOldTable && !committed) {
+          fs.rename(oldTableDir, finalOutputDir);
+        }
+      }
+    } else {
+      FileStatus[] files = fs.listStatus(stagingResultDir);
+      for (FileStatus eachFile: files) {
+        Path targetFilePath = new Path(finalOutputDir, eachFile.getPath().getName());
+        if (fs.exists(targetFilePath)) {
+          targetFilePath = new Path(finalOutputDir, eachFile.getPath().getName() + "_" + System.currentTimeMillis());
+        }
+        fs.rename(eachFile.getPath(), targetFilePath);
+      }
+    }
+
+    long volume = getTableVolume(conf, finalOutputDir);
+
+    TableStats stats;
+    if (insertNode.hasTargetTable()) {
+      stats = tableDesc.getStats();
+      stats.setNumBytes(volume);
+      stats.setNumRows(1);
+      tableDesc.setStats(stats);
+      catalog.dropTable(insertNode.getTableName());
+      catalog.createTable(tableDesc);
+    } else {
+      stats = new TableStats();
+      stats.setNumBytes(volume);
+      stats.setNumRows(1);
+    }
+
+    return stats;
   }
 
   /**

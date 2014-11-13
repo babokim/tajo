@@ -28,6 +28,7 @@ package org.apache.tajo.plan.logical;
 public enum NodeType {
   ROOT(LogicalRootNode.class),
   EXPRS(EvalExprNode.class),
+  EXPRS_ARRAY(EvalExprArrayNode.class),
   PROJECTION(ProjectionNode.class),
   LIMIT(LimitNode.class),
   SORT(SortNode.class),

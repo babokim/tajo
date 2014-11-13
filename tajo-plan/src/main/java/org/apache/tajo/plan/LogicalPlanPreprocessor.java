@@ -470,11 +470,26 @@ public class LogicalPlanPreprocessor extends BaseAlgebraVisitor<LogicalPlanner.P
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Insert or Update Section
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////
+  @Override
+  public LogicalNode visitValueListArrayExpr(LogicalPlanner.PlanContext ctx, Stack<Expr> stack,
+                                             ValueListArrayExpr expr) throws PlanningException {
+    EvalExprArrayNode result = ctx.plan.createNode(EvalExprArrayNode.class);
+    for (ValueListExpr eachValueListExpr: expr.getValues()) {
+      visit(ctx, stack, eachValueListExpr);
+    }
+    return result;
+  }
+
+  @Override
+  public LogicalNode visitValueListExpr(LogicalPlanner.PlanContext ctx, Stack<Expr> stack,
+                                             ValueListExpr expr) throws PlanningException {
+    EvalExprNode exprNode = ctx.plan.createNode(EvalExprNode.class);
+    return exprNode;
+  }
 
   public LogicalNode visitInsert(LogicalPlanner.PlanContext ctx, Stack<Expr> stack, Insert expr)
       throws PlanningException {
     LogicalNode child = super.visitInsert(ctx, stack, expr);
-
     InsertNode insertNode = new InsertNode(ctx.plan.newPID());
     insertNode.setInSchema(child.getOutSchema());
     insertNode.setOutSchema(child.getOutSchema());
