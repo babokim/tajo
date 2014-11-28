@@ -74,6 +74,7 @@ public class SeqScanExec extends PhysicalExec {
                      ScanNode plan, CatalogProtos.FragmentProto [] fragments) throws IOException {
     super(context, plan.getInSchema(), plan.getOutSchema());
 
+    stopWatch = new StopWatch(4);
     this.plan = plan;
     pid = plan.getPID();
     this.qual = plan.getQual();
@@ -98,8 +99,6 @@ public class SeqScanExec extends PhysicalExec {
     }
 
     projectorEvalNodeKey = this.getClass().getSimpleName() + "_" + plan.getPID() + ".project";
-
-    stopWatch = new StopWatch(4);
   }
 
   /**
