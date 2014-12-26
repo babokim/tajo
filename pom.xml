@@ -93,6 +93,7 @@
     <module>tajo-dist</module>
     <module>tajo-thirdparty/asm</module>
     <module>tajo-thrift-server</module>
+    <module>tajo-cpp-client</module>
   </modules>
 
   <build>
