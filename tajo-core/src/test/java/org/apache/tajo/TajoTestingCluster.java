@@ -682,26 +682,6 @@ public class TajoTestingCluster {
     }
   }
 
-    /**
-    * Write lines to a file.
-    *
-    * @param file File to write lines to
-    * @param lines Strings written to the file
-    * @throws java.io.IOException
-    */
-  private static void writeLines(File file, String... lines)
-      throws IOException {
-    Writer writer = Files.newWriter(file, Charsets.UTF_8);
-    try {
-      for (String line : lines) {
-        writer.write(line);
-        writer.write('\n');
-      }
-    } finally {
-      Closeables.closeQuietly(writer);
-    }
-  }
-
   public void setAllTajoDaemonConfValue(String key, String value) {
     tajoMaster.getContext().getConf().set(key, value);
     setAllWorkersConfValue(key, value);

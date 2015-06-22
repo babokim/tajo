@@ -141,6 +141,8 @@ public class TableSpaceManager {
     String typeName;
     if (storeType.equalsIgnoreCase("HBASE")) {
       typeName = "hbase";
+    } else if (storeType.equalsIgnoreCase("DRUID")) {
+      typeName = "druid";
     } else {
       typeName = "hdfs";
     }
